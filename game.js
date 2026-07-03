@@ -1,8 +1,9 @@
 // ============================================================
-//  CAT PLATFORMER — PHASE 3 PROTOTYPE
-//  A tag team of 3 cats with independent HP, platforms,
-//  run + jump + Flash Jump, claw swipe combat, patrolling
-//  enemy blobs, damage numbers, and a game-over screen.
+//  CAT PLATFORMER — PHASE 4 PROTOTYPE
+//  A tag team of 3 cat breeds, each with its own physics
+//  profile: heavy Maine Coon, zippy Siamese, floaty Persian.
+//  Plus claw swipe combat, patrolling enemy blobs, damage
+//  numbers, contact damage, and a game-over screen.
 //
 //  CONTROLS
 //    ← →        run
@@ -21,31 +22,26 @@
 // ============================================================
 
 // ---------- Tuning knobs (edit these to change game feel) ----------
+// Global, breed-independent values. Anything that differs per cat
+// lives in the BREEDS profiles below instead.
 const TUNING = {
-  runSpeed: 230,        // horizontal run speed (px/sec)
-  runAccel: 1800,       // how fast the cat reaches run speed
+  runAccel: 1800,       // how fast a cat reaches run speed
   airAccel: 1200,       // air control (lower = floatier commitment)
-  jumpVelocity: -480,   // initial jump strength (negative = up)
-  gravity: 1100,        // world gravity
   coyoteMs: 110,        // grace period after leaving a ledge
   jumpBufferMs: 130,    // grace period for early jump presses
-  flashJumpX: 500,      // horizontal flash-jump burst speed
-  flashJumpLift: -240,  // small upward pop during horizontal flash jump
-  flashJumpUpY: -430,   // vertical flash-jump strength (hold UP)
 
-  // --- Phase 2: combat & enemies ---
-  attackDamage: 1,        // damage per swipe hit
+  // --- Combat & enemies ---
   attackCooldownMs: 320,  // minimum time between swipes
   attackReach: 46,        // how far the swipe hitbox extends in front
   attackHeight: 40,       // vertical size of the swipe hitbox
   attackKnockbackX: 240,  // horizontal shove on hit enemies
   attackKnockbackY: -140, // upward pop on hit enemies
+  enemyGravity: 1100,     // gravity applied to enemy blobs
   enemySpeed: 55,         // blob patrol speed (px/sec)
-  enemyHp: 3,             // swipes needed to defeat a blob
+  enemyHp: 3,             // damage needed to defeat a blob
   enemyStunMs: 220,       // how long knockback overrides patrolling
 
-  // --- Phase 3: tag team & taking damage ---
-  catMaxHp: 5,            // HP each roster cat starts with
+  // --- Tag team & taking damage ---
   touchDamage: 1,         // damage from bumping into a blob
   hurtInvulnMs: 900,      // invulnerability window after taking a hit
   hurtLockMs: 220,        // how long knockback overrides your controls
@@ -53,6 +49,66 @@ const TUNING = {
   hurtKnockbackY: -260,   // upward pop when you get hit
   swapCooldownMs: 400,    // minimum time between tag swaps
 };
+
+// ---------- Breed profiles (Phase 4) ----------
+// Each roster cat is a breed with its own physics + combat feel.
+// The active profile applies the moment you tag-swap.
+const BREEDS = [
+  {
+    name: 'Maine Coon', // the heavyweight: slow, stompy, hits like a truck
+    texture: 'cat-maine',
+    palette: {
+      tail: 0x9a5b33, body: 0xb3703f, inner: 0xe3b58e,
+      eyes: 0x3a2a1a, nose: 0x8a4630, paws: 0xe8cdb2,
+    },
+    profile: {
+      maxHp: 6,
+      runSpeed: 185,      // lumbering
+      jumpVelocity: -540, // big leap...
+      gravity: 1400,      // ...but comes down HARD
+      flashJumpX: 430,
+      flashJumpLift: -200,
+      flashJumpUpY: -390,
+      attackDamage: 2,    // two swipes fell a blob
+    },
+  },
+  {
+    name: 'Siamese', // the speedster: fastest run and flash jump, light hits
+    texture: 'cat-siamese',
+    palette: {
+      tail: 0x6b5340, body: 0xe8d8c0, inner: 0xd8b09a,
+      eyes: 0x4a7fd0, nose: 0x9a6a5a, paws: 0x6b5340,
+    },
+    profile: {
+      maxHp: 4,
+      runSpeed: 300,
+      jumpVelocity: -470,
+      gravity: 1100,
+      flashJumpX: 650,    // screen-crossing zoomies
+      flashJumpLift: -260,
+      flashJumpUpY: -470,
+      attackDamage: 1,
+    },
+  },
+  {
+    name: 'Persian', // the cloud: floaty low gravity, slow, highest HP
+    texture: 'cat-persian',
+    palette: {
+      tail: 0xd8d8e2, body: 0xf0eef5, inner: 0xf5c9d4,
+      eyes: 0xc9862a, nose: 0xe0a0b0, paws: 0xffffff,
+    },
+    profile: {
+      maxHp: 7,
+      runSpeed: 175,
+      jumpVelocity: -400,
+      gravity: 700,       // drifts down like a dandelion seed
+      flashJumpX: 420,
+      flashJumpLift: -220,
+      flashJumpUpY: -380,
+      attackDamage: 1,
+    },
+  },
+];
 
 const WORLD_WIDTH = 2400;
 const WORLD_HEIGHT = 720;
@@ -102,23 +158,14 @@ class PlayScene extends Phaser.Scene {
 
   makeTextures() {
     // scene.restart() re-runs create(); textures survive, so skip regen
-    if (this.textures.exists('cat-mochi')) return;
+    if (this.textures.exists(BREEDS[0].texture)) return;
 
     const g = this.make.graphics({ x: 0, y: 0, add: false });
 
-    // --- The roster cats (placeholder palettes until Phase 4 breeds) ---
-    this.makeCatTexture(g, 'cat-mochi', { // orange shorthair
-      tail: 0xe8853b, body: 0xf59b4c, inner: 0xffc9a3,
-      eyes: 0x3a2a1a, nose: 0xd96a4b, paws: 0xffe3c9,
-    });
-    this.makeCatTexture(g, 'cat-sora', { // blue-gray
-      tail: 0x8290ad, body: 0x9fb0d0, inner: 0xdde4f5,
-      eyes: 0x2e3550, nose: 0xe08098, paws: 0xedf1fa,
-    });
-    this.makeCatTexture(g, 'cat-nori', { // charcoal with golden eyes
-      tail: 0x4a4650, body: 0x615c6b, inner: 0xb3aac2,
-      eyes: 0xf0c95c, nose: 0xb56a86, paws: 0xc9c2d6,
-    });
+    // --- The roster cats, one texture per breed palette ---
+    for (const breed of BREEDS) {
+      this.makeCatTexture(g, breed.texture, breed.palette);
+    }
 
     // --- Ground / platform tiles ---
     g.clear();
@@ -209,19 +256,15 @@ class PlayScene extends Phaser.Scene {
       }
     }
 
-    // --- The tag team: 3 cats, one on the field at a time ---
-    this.roster = [
-      { name: 'Mochi', texture: 'cat-mochi', hp: TUNING.catMaxHp },
-      { name: 'Sora', texture: 'cat-sora', hp: TUNING.catMaxHp },
-      { name: 'Nori', texture: 'cat-nori', hp: TUNING.catMaxHp },
-    ];
+    // --- The tag team: one cat per breed, one on the field at a time ---
+    this.roster = BREEDS.map((b) => ({ ...b, hp: b.profile.maxHp }));
     this.activeIndex = 0;
 
     this.cat = this.physics.add.sprite(120, WORLD_HEIGHT - 80, this.roster[0].texture);
     this.cat.setCollideWorldBounds(true);
-    this.cat.body.setGravityY(TUNING.gravity - this.physics.world.gravity.y);
+    this.cat.body.setGravityY(this.activeProfile().gravity - this.physics.world.gravity.y);
     this.cat.body.setSize(34, 30).setOffset(8, 8);
-    this.cat.setMaxVelocity(600, 900);
+    this.cat.setMaxVelocity(700, 900); // roomy enough for Siamese flash jumps
 
     this.physics.add.collider(this.cat, this.platforms);
     this.cameras.main.startFollow(this.cat, true, 0.12, 0.12);
@@ -236,7 +279,7 @@ class PlayScene extends Phaser.Scene {
     for (const [bx, by] of blobSpawns) {
       const blob = this.enemies.create(bx, by, 'blob');
       blob.setCollideWorldBounds(true);
-      blob.body.setGravityY(TUNING.gravity - this.physics.world.gravity.y);
+      blob.body.setGravityY(TUNING.enemyGravity - this.physics.world.gravity.y);
       blob.body.setSize(32, 20).setOffset(2, 6);
       blob.setData('hp', TUNING.enemyHp);
       blob.setData('dir', Phaser.Math.RND.pick([-1, 1]));
@@ -299,6 +342,7 @@ class PlayScene extends Phaser.Scene {
     }
 
     const cat = this.cat;
+    const P = this.activeProfile();
     const onGround = cat.body.blocked.down || cat.body.touching.down;
 
     // --- Track grounded state for coyote time & flash jump reset ---
@@ -326,9 +370,9 @@ class PlayScene extends Phaser.Scene {
       cat.setVelocityX(cat.body.velocity.x * (onGround ? 0.8 : 0.97));
     }
     // clamp run speed (acceleration model can exceed it slightly)
-    if (Math.abs(cat.body.velocity.x) > TUNING.runSpeed && !this.isDashing &&
+    if (Math.abs(cat.body.velocity.x) > P.runSpeed && !this.isDashing &&
         time >= this.controlLockUntil) {
-      cat.setVelocityX(Math.sign(cat.body.velocity.x) * TUNING.runSpeed);
+      cat.setVelocityX(Math.sign(cat.body.velocity.x) * P.runSpeed);
     }
 
     // --- Jump input (SPACE or UP both work) ---
@@ -344,7 +388,7 @@ class PlayScene extends Phaser.Scene {
 
     // GROUND JUMP (with coyote time + jump buffering)
     if (buffered && (onGround || withinCoyote) && cat.body.velocity.y >= -10) {
-      cat.setVelocityY(TUNING.jumpVelocity);
+      cat.setVelocityY(P.jumpVelocity);
       this.lastJumpPressTime = -9999; // consume the buffered press
       this.isJumpHeld = true;
       this.squash(1.15, 0.85); // little stretch on takeoff
@@ -354,11 +398,11 @@ class PlayScene extends Phaser.Scene {
       this.hasFlashJump = false;
       if (this.cursors.up.isDown && !Phaser.Input.Keyboard.JustDown(this.cursors.up)) {
         // Vertical flash jump: was already holding UP, pressed SPACE
-        cat.setVelocityY(TUNING.flashJumpUpY);
+        cat.setVelocityY(P.flashJumpUpY);
       } else {
         // Horizontal flash jump in facing direction
-        cat.setVelocityX(TUNING.flashJumpX * this.facing);
-        cat.setVelocityY(TUNING.flashJumpLift);
+        cat.setVelocityX(P.flashJumpX * this.facing);
+        cat.setVelocityY(P.flashJumpLift);
         this.isDashing = true; // let the burst exceed run speed briefly
         this.time.delayedCall(260, () => (this.isDashing = false));
       }
@@ -432,9 +476,10 @@ class PlayScene extends Phaser.Scene {
   }
 
   hitEnemy(enemy) {
-    const hp = enemy.getData('hp') - TUNING.attackDamage;
+    const damage = this.activeProfile().attackDamage;
+    const hp = enemy.getData('hp') - damage;
     enemy.setData('hp', hp);
-    this.popDamageNumber(enemy.x, enemy.y - 18, TUNING.attackDamage);
+    this.popDamageNumber(enemy.x, enemy.y - 18, damage);
 
     // knockback away from the cat + brief white flash
     enemy.setVelocity(this.facing * TUNING.attackKnockbackX, TUNING.attackKnockbackY);
@@ -513,8 +558,12 @@ class PlayScene extends Phaser.Scene {
   }
 
   // ----------------------------------------------------------
-  // Phase 3: tag team, HP, and taking damage
+  // Phase 3+4: tag team, HP, taking damage, breed profiles
   // ----------------------------------------------------------
+  activeProfile() {
+    return this.roster[this.activeIndex].profile;
+  }
+
   onTouchEnemy(enemy) {
     if (this.gameOver || !enemy.active || !enemy.body.enable) return;
     const now = this.time.now;
@@ -558,6 +607,8 @@ class PlayScene extends Phaser.Scene {
   swapTo(i) {
     this.activeIndex = i;
     this.cat.setTexture(this.roster[i].texture);
+    // the incoming breed's physics take over immediately
+    this.cat.body.setGravityY(this.activeProfile().gravity - this.physics.world.gravity.y);
     this.squash(1.25, 0.75);
     this.add.particles(this.cat.x, this.cat.y, 'puff', {
       speed: { min: 30, max: 90 },
@@ -623,17 +674,19 @@ class PlayScene extends Phaser.Scene {
       this.hudTexts[i].setColor(active ? '#ffe9c9' : '#8f86ae');
       this.hudTexts[i].setAlpha(c.hp > 0 ? 1 : 0.45);
 
-      // bar background + fill (green -> yellow -> red as HP drops)
+      // bar background + fill (green -> yellow -> red as HP drops);
+      // bar length scales with the breed's max HP (18px per point)
+      const barW = c.profile.maxHp * 18;
       g.fillStyle(0x2b2344, 0.85);
-      g.fillRect(80, y, 90, 12);
+      g.fillRect(110, y, barW, 12);
       if (c.hp > 0) {
-        const frac = c.hp / TUNING.catMaxHp;
+        const frac = c.hp / c.profile.maxHp;
         g.fillStyle(frac > 0.6 ? 0x7ddf6a : frac > 0.3 ? 0xf5d442 : 0xff6b6b);
-        g.fillRect(82, y + 2, 86 * frac, 8);
+        g.fillRect(112, y + 2, (barW - 4) * frac, 8);
       }
       if (active) {
         g.lineStyle(2, 0xffe9c9, 1);
-        g.strokeRect(79, y - 1, 92, 14);
+        g.strokeRect(109, y - 1, barW + 2, 14);
       }
     });
   }
