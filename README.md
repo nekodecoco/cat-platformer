@@ -1,11 +1,12 @@
-# Cat Platformer — Phase 5 Prototype
+# Cat Platformer — Phase 6 Prototype
 
-A 2D tag-team action platformer starring cats. This is the Phase 5 build:
-a roster of 3 cat breeds with their own physics profiles AND signature
-abilities — heavy Maine Coon (Ground Pound), zippy Siamese (Blink Dash),
-floaty Persian (Puff Shield) — plus tag-assist strikes, independent HP,
-claw-swipe combat, patrolling enemy blobs, damage numbers, contact damage
-with knockback, and a game-over screen.
+A 2D tag-team action platformer starring cats. This is the Phase 6 build:
+the first real campaign stage. Fight the Blob King's goo squad across a
+long deliberate level, juggle enemies for combo bonus damage, watch the
+story unfold in dialogue cutscenes, and dethrone the Blob King himself —
+a boss with his own HP bar and a lunge-hop attack. All on top of the
+3-breed tag team (Maine Coon / Siamese / Persian) with physics profiles
+and signature abilities.
 
 ## How to run it
 
@@ -30,7 +31,9 @@ with knockback, and a game-over screen.
     through enemies, briefly invulnerable
   - *Persian — Puff Shield*: a floof bubble that absorbs the next contact
     hit within a few seconds
-- **R** — restart after a game over
+- **R** — restart after a game over or stage clear
+- **SPACE** during dialogue — advance (press once to finish the line,
+  again to continue)
 
 ## Tuning the game feel
 
@@ -59,6 +62,13 @@ is all in those profile numbers.
 - Auto-swap to the next living cat on KO; game over + restart when all fall
 - Signature abilities with per-breed cooldowns and HUD cooldown pips
 - Tag-assist: swapping in a cat triggers a free swipe on entry
+- Juggle combos: airborne enemies take bonus damage (blue numbers) and
+  get re-launched; a combo counter ticks up and fades if you stop
+- Dialogue cutscenes with portraits and typewriter text (stage start
+  and stage clear)
+- A 4200px campaign stage: warm-up, climb, gauntlet, and a boss arena
+- The Blob King: 20 HP, a top-center boss bar, lunge-hops at nearby
+  cats, deals double contact damage, and barely flinches at knockback
 
 ## Roadmap
 
@@ -66,22 +76,25 @@ is all in those profile numbers.
 - [x] Phase 2 — Enemies + basic attack + damage numbers
 - [x] Phase 3 — 3-cat tag-swap with independent HP + auto-swap on KO
 - [x] Phase 4 — Breed physics profiles (Maine Coon, Siamese, Persian)
-- [x] Phase 5 — Signature abilities + tag-assists (this build)
-- [ ] Phase 6 — Juggles, dialogue cutscenes, a real campaign stage
+- [x] Phase 5 — Signature abilities + tag-assists
+- [x] Phase 6 — Juggles, dialogue cutscenes, a real campaign stage (this build)
 - [ ] Phase 7 — Offline gacha + Cat Nap commissions
 
-## Next Claude Code prompt (Phase 6)
+## Next Claude Code prompt (Phase 7)
 
 Open Claude Code in this folder and paste:
 
 > Read game.js and README.md. This is a Phaser 3 cat platformer, currently
-> Phase 5 (3-breed tag team with signature abilities). Build Phase 6:
-> juggles, dialogue cutscenes, and a real campaign stage. Add juggle
-> combos: enemies launched by attacks can be hit again in mid-air for
-> bonus damage, with a combo counter that fades if you stop. Add a simple
-> dialogue system: speaker name + portrait swatch + typewriter text in a
-> box at the bottom, advanced with SPACE, triggered at stage start and
-> stage clear. Turn the world into a campaign stage: a wider level with
-> more platforms, more blobs placed deliberately, and a boss blob at the
-> end with a big HP bar; defeating it clears the stage. Keep TUNING/BREEDS
-> patterns. No build tools; keep plain script files.
+> Phase 6 (campaign stage with a boss). Build Phase 7: offline gacha + Cat
+> Nap commissions. Add fish coins: enemies drop 1-3 spinning fish coins on
+> defeat (the Blob King drops a pile) that the cat collects on touch, with
+> a coin counter in the HUD, persisted in localStorage. Add a Cat Nap
+> commissions board on the stage-clear screen: assign a resting cat to a
+> named nap job (Sunbeam Patrol, Keyboard Warmer, Box Inspector) that pays
+> fish coins based on real elapsed time, even while the game is closed
+> (check timestamps in localStorage on load). Add a gacha shrine at the
+> start of the stage: press UP in front of it to spend 10 fish coins on a
+> random cosmetic collar color for a random roster cat (visible tint ring
+> or bandana on the sprite, saved in localStorage, duplicates convert to
+> 2 coins). Keep TUNING/BREEDS patterns. No build tools; keep plain
+> script files.

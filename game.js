@@ -1,9 +1,9 @@
 // ============================================================
-//  CAT PLATFORMER — PHASE 5 PROTOTYPE
-//  A tag team of 3 cat breeds, each with its own physics
-//  profile AND signature ability: heavy Maine Coon (Ground
-//  Pound), zippy Siamese (Blink Dash), floaty Persian (Puff
-//  Shield). Tag-swapping in a cat triggers a free assist swipe.
+//  CAT PLATFORMER — PHASE 6 PROTOTYPE
+//  The first campaign stage: fight through the Blob King's goo
+//  squad across a long stage and dethrone the king himself.
+//  Juggle combos, dialogue cutscenes, boss fight — plus the
+//  3-breed tag team with signature abilities from Phase 5.
 //
 //  CONTROLS
 //    ← →        run
@@ -41,6 +41,19 @@ const TUNING = {
   enemySpeed: 55,         // blob patrol speed (px/sec)
   enemyHp: 3,             // damage needed to defeat a blob
   enemyStunMs: 220,       // how long knockback overrides patrolling
+
+  // --- Juggles & combos (Phase 6) ---
+  juggleBonusDamage: 1,   // extra damage when you hit an airborne enemy
+  juggleKnockbackY: -300, // harder launch on juggled enemies (keeps them up)
+  comboTimeoutMs: 1800,   // stop hitting this long and the combo fades
+
+  // --- The Blob King (Phase 6 boss) ---
+  bossHp: 20,
+  bossSpeed: 40,          // patrol speed
+  bossTouchDamage: 2,     // royal mass hurts more
+  bossHopMs: 2200,        // how often he lunge-hops at a nearby cat
+  bossHopVx: 190,
+  bossHopVy: -430,
 
   // --- Tag team & taking damage ---
   touchDamage: 1,         // damage from bumping into a blob
@@ -132,8 +145,28 @@ const BREEDS = [
   },
 ];
 
-const WORLD_WIDTH = 2400;
+const WORLD_WIDTH = 4200; // campaign stage: ends at the Blob King's arena
 const WORLD_HEIGHT = 720;
+
+// ---------- Cutscene dialogue (Phase 6) ----------
+const INTRO_DIALOGUE = [
+  { speaker: 'Maine Coon', portrait: 'cat-maine',
+    text: 'The Blob King oozed over our nap spots. Every. Last. Sunbeam.' },
+  { speaker: 'Siamese', portrait: 'cat-siamese',
+    text: 'So we scratch through his goo squad and take the naps back. Easy.' },
+  { speaker: 'Persian', portrait: 'cat-persian',
+    text: 'I was woken up for this. The Blob King will answer for that.' },
+];
+const CLEAR_DIALOGUE = [
+  { speaker: 'Blob King', portrait: 'boss',
+    text: 'Splat... I only wanted... a warm place to puddle...' },
+  { speaker: 'Maine Coon', portrait: 'cat-maine',
+    text: 'The sunbeams are ours again. Team, well scratched.' },
+  { speaker: 'Siamese', portrait: 'cat-siamese',
+    text: 'Victory nap. Right here. Right now. Tag me out.' },
+  { speaker: 'Persian', portrait: 'cat-persian',
+    text: 'Wake me when Phase 7 starts.' },
+];
 
 // ---------- Scene ----------
 class PlayScene extends Phaser.Scene {
@@ -211,6 +244,31 @@ class PlayScene extends Phaser.Scene {
     g.fillCircle(24, 16, 2);
     g.generateTexture('blob', 36, 26);
 
+    // --- The Blob King (72x52 crowned slime, very grumpy) ---
+    g.clear();
+    // crown
+    g.fillStyle(0xffd23e);
+    g.fillTriangle(22, 12, 26, 0, 30, 12);
+    g.fillTriangle(30, 12, 36, 2, 42, 12);
+    g.fillTriangle(42, 12, 46, 0, 50, 12);
+    g.fillRect(22, 8, 28, 6);
+    // body
+    g.fillStyle(0x58b048);
+    g.fillRoundedRect(0, 12, 72, 40, { tl: 26, tr: 26, bl: 10, br: 10 });
+    g.fillStyle(0x7ed468); // jelly highlight
+    g.fillRoundedRect(8, 18, 56, 12, 6);
+    // angry eyes + brows
+    g.fillStyle(0xffffff);
+    g.fillCircle(26, 34, 7);
+    g.fillCircle(46, 34, 7);
+    g.fillStyle(0x203020);
+    g.fillCircle(26, 36, 3.5);
+    g.fillCircle(46, 36, 3.5);
+    g.fillStyle(0x2e5e2e);
+    g.fillTriangle(17, 27, 33, 22, 33, 28);
+    g.fillTriangle(55, 27, 39, 22, 39, 28);
+    g.generateTexture('boss', 72, 52);
+
     // --- Claw swipe (three tapered streaks) ---
     g.clear();
     g.fillStyle(0xffffff, 0.9);
@@ -243,7 +301,7 @@ class PlayScene extends Phaser.Scene {
     this.cameras.main.setBackgroundColor(0x3d3260); // cozy evening purple
 
     // Decorative stars in the background (parallax-ish, fixed to world)
-    for (let i = 0; i < 60; i++) {
+    for (let i = 0; i < 110; i++) {
       const s = this.add.image(
         Phaser.Math.Between(0, WORLD_WIDTH),
         Phaser.Math.Between(0, 380),
@@ -261,6 +319,7 @@ class PlayScene extends Phaser.Scene {
     }
 
     // Floating platforms at assorted heights: [x, y, widthInTiles]
+    // Sections: warm-up -> climb -> gauntlet -> descent -> boss arena (3650+)
     const layout = [
       [260, 560, 3],
       [520, 460, 3],
@@ -271,6 +330,11 @@ class PlayScene extends Phaser.Scene {
       [1850, 420, 3],
       [2100, 300, 3],
       [2300, 480, 2],
+      [2550, 560, 3],
+      [2750, 420, 4],
+      [3000, 300, 3],
+      [3200, 480, 3],
+      [3450, 380, 2],
     ];
     for (const [px, py, tiles] of layout) {
       for (let i = 0; i < tiles; i++) {
@@ -291,12 +355,18 @@ class PlayScene extends Phaser.Scene {
     this.physics.add.collider(this.cat, this.platforms);
     this.cameras.main.startFollow(this.cat, true, 0.12, 0.12);
 
-    // --- Enemies: blobs that patrol platforms and turn at edges ---
+    // --- Enemies: blobs placed deliberately along the campaign route ---
     this.enemies = this.physics.add.group();
     const blobSpawns = [
-      [860, 340],                 // on the 4-tile platform at x=800
-      [1250, WORLD_HEIGHT - 60],  // on the ground, mid-world
-      [1660, 520],                // on the 4-tile platform at x=1600
+      [860, 340],                 // warm-up: the 4-tile platform at x=800
+      [1250, WORLD_HEIGHT - 60],  // ground wanderer
+      [1660, 520],                // the 4-tile platform at x=1600
+      [1450, WORLD_HEIGHT - 60],  // ground pair with the one above
+      [2600, 520],                // gauntlet begins
+      [2820, 380],
+      [3060, 260],                // high road toll collector
+      [3250, 440],
+      [2950, WORLD_HEIGHT - 60],  // ground guard before the arena
     ];
     for (const [bx, by] of blobSpawns) {
       const blob = this.enemies.create(bx, by, 'blob');
@@ -307,6 +377,19 @@ class PlayScene extends Phaser.Scene {
       blob.setData('dir', Phaser.Math.RND.pick([-1, 1]));
       blob.setData('stunUntil', 0);
     }
+
+    // --- The Blob King waits at the end of the stage ---
+    this.boss = this.enemies.create(3950, WORLD_HEIGHT - 80, 'boss');
+    this.boss.setCollideWorldBounds(true);
+    this.boss.body.setGravityY(TUNING.enemyGravity - this.physics.world.gravity.y);
+    this.boss.body.setSize(64, 40).setOffset(4, 10);
+    this.boss.setData('hp', TUNING.bossHp);
+    this.boss.setData('dir', -1);
+    this.boss.setData('stunUntil', 0);
+    this.boss.setData('isBoss', true);
+    this.boss.setData('touchDamage', TUNING.bossTouchDamage);
+    this.boss.setData('nextHopAt', 0);
+
     this.physics.add.collider(this.enemies, this.platforms);
 
     // Bumping into a blob hurts the active cat
@@ -327,6 +410,11 @@ class PlayScene extends Phaser.Scene {
     this.pounding = false;   // Maine Coon mid-slam
     this.shieldUntil = 0;    // Persian shield expiry time
     this.shieldFx = null;
+    this.comboCount = 0;     // running hit combo
+    this.comboExpireAt = 0;
+    this.dialogueActive = false;
+    this.dlgUi = null;       // dialogue box UI, built lazily
+    this.stageCleared = false;
 
     // --- Game-feel state ---
     this.lastGroundedTime = 0;   // for coyote time
@@ -356,13 +444,20 @@ class PlayScene extends Phaser.Scene {
       .setDepth(10);
 
     this.createHud();
+
+    // --- Opening cutscene ---
+    this.time.delayedCall(350, () => this.startDialogue(INTRO_DIALOGUE));
   }
 
   // ----------------------------------------------------------
   // Main loop — runs every frame (~60x per second)
   // ----------------------------------------------------------
   update(time) {
-    if (this.gameOver) {
+    if (this.dialogueActive) {
+      if (Phaser.Input.Keyboard.JustDown(this.keySpace)) this.advanceDialogue();
+      return;
+    }
+    if (this.gameOver || this.stageCleared) {
       if (Phaser.Input.Keyboard.JustDown(this.keyR)) this.scene.restart();
       return;
     }
@@ -482,6 +577,12 @@ class PlayScene extends Phaser.Scene {
       if (time > this.shieldUntil) this.clearShield();
     }
 
+    // --- Combo fades if you stop hitting things ---
+    if (this.comboCount > 0 && time > this.comboExpireAt) {
+      this.comboCount = 0;
+      this.tweens.add({ targets: this.comboText, alpha: 0, duration: 250 });
+    }
+
     this.updateEnemies(time);
     this.updateHud(); // every frame so the cooldown pips animate
   }
@@ -512,7 +613,7 @@ class PlayScene extends Phaser.Scene {
       TUNING.attackHeight
     );
     for (const enemy of this.enemies.getChildren()) {
-      if (!enemy.active) continue;
+      if (!enemy.active || !enemy.body.enable) continue; // skip dying enemies
       if (Phaser.Geom.Rectangle.Overlaps(hitRect, enemy.getBounds())) {
         this.hitEnemy(enemy, this.activeProfile().attackDamage, this.facing);
       }
@@ -520,37 +621,59 @@ class PlayScene extends Phaser.Scene {
   }
 
   hitEnemy(enemy, damage, knockDir) {
-    const hp = enemy.getData('hp') - damage;
+    // juggle: airborne enemies take bonus damage and get launched again
+    const juggled = !enemy.body.blocked.down && !enemy.getData('isBoss');
+    const total = damage + (juggled ? TUNING.juggleBonusDamage : 0);
+    const hp = enemy.getData('hp') - total;
     enemy.setData('hp', hp);
-    this.popDamageNumber(enemy.x, enemy.y - 18, damage);
+    this.popDamageNumber(enemy.x, enemy.y - 18, total, juggled ? '#7cf0ff' : undefined);
 
-    // knockback + brief white flash
-    enemy.setVelocity(knockDir * TUNING.attackKnockbackX, TUNING.attackKnockbackY);
+    // knockback + brief white flash (the king barely budges)
+    const kbScale = enemy.getData('isBoss') ? 0.15 : 1;
+    enemy.setVelocity(
+      knockDir * TUNING.attackKnockbackX * kbScale,
+      (juggled ? TUNING.juggleKnockbackY : TUNING.attackKnockbackY) * kbScale
+    );
     enemy.setData('stunUntil', this.time.now + TUNING.enemyStunMs);
     enemy.setTintFill(0xffffff);
     this.time.delayedCall(80, () => enemy.active && enemy.clearTint());
+
+    // combo bookkeeping
+    this.comboCount++;
+    this.comboExpireAt = this.time.now + TUNING.comboTimeoutMs;
+    this.showCombo();
 
     if (hp <= 0) this.defeatEnemy(enemy);
   }
 
   defeatEnemy(enemy) {
     enemy.body.enable = false;
+    const isBoss = enemy.getData('isBoss');
     this.add.particles(enemy.x, enemy.y, 'puff', {
-      speed: { min: 40, max: 120 },
-      scale: { start: 0.6, end: 0 },
-      lifespan: 400,
-      tint: 0x9fe87c,
+      speed: { min: 40, max: isBoss ? 220 : 120 },
+      scale: { start: isBoss ? 1.1 : 0.6, end: 0 },
+      lifespan: isBoss ? 700 : 400,
+      tint: [0x9fe87c, 0xffd23e],
       emitting: false,
-    }).explode(10);
+    }).explode(isBoss ? 26 : 10);
     this.tweens.add({
       targets: enemy,
       scaleX: 1.4,
       scaleY: 0.2,
       alpha: 0,
-      duration: 180,
+      duration: isBoss ? 450 : 180,
       ease: 'Quad.easeIn',
       onComplete: () => enemy.destroy(),
     });
+
+    if (isBoss) {
+      this.cameras.main.shake(400, 0.01);
+      this.time.delayedCall(900, () => {
+        if (!this.gameOver) {
+          this.startDialogue(CLEAR_DIALOGUE, () => this.showStageClear());
+        }
+      });
+    }
   }
 
   popDamageNumber(x, y, amount, color) {
@@ -583,6 +706,21 @@ class PlayScene extends Phaser.Scene {
       if (!enemy.active || !enemy.body.enable) continue;
       if (time < enemy.getData('stunUntil')) continue; // knockback in progress
 
+      // the Blob King lunge-hops at cats that get close
+      if (
+        enemy.getData('isBoss') &&
+        enemy.body.blocked.down &&
+        time > enemy.getData('nextHopAt') &&
+        Math.abs(this.cat.x - enemy.x) < 350
+      ) {
+        enemy.setData('nextHopAt', time + TUNING.bossHopMs);
+        const hopDir = Math.sign(this.cat.x - enemy.x) || 1;
+        enemy.setVelocity(hopDir * TUNING.bossHopVx, TUNING.bossHopVy);
+        enemy.setData('dir', hopDir);
+        enemy.setFlipX(hopDir < 0);
+        continue;
+      }
+
       let dir = enemy.getData('dir');
       if (enemy.body.blocked.down) {
         if (enemy.body.blocked.left) dir = 1;
@@ -593,9 +731,11 @@ class PlayScene extends Phaser.Scene {
           const floor = this.physics.overlapRect(aheadX - 2, enemy.body.bottom + 2, 4, 10, false, true);
           if (floor.length === 0) dir = -dir;
         }
+      } else if (enemy.getData('isBoss')) {
+        continue; // mid-hop: let the arc play out
       }
       enemy.setData('dir', dir);
-      enemy.setVelocityX(dir * TUNING.enemySpeed);
+      enemy.setVelocityX(dir * (enemy.getData('isBoss') ? TUNING.bossSpeed : TUNING.enemySpeed));
       enemy.setFlipX(dir < 0);
     }
   }
@@ -623,12 +763,13 @@ class PlayScene extends Phaser.Scene {
       return;
     }
 
+    const touchDamage = enemy.getData('touchDamage') || TUNING.touchDamage;
     const active = this.roster[this.activeIndex];
-    active.hp = Math.max(0, active.hp - TUNING.touchDamage);
+    active.hp = Math.max(0, active.hp - touchDamage);
     this.invulnUntil = now + TUNING.hurtInvulnMs;
     this.controlLockUntil = now + TUNING.hurtLockMs;
 
-    this.popDamageNumber(this.cat.x, this.cat.y - 26, TUNING.touchDamage, '#ff6b6b');
+    this.popDamageNumber(this.cat.x, this.cat.y - 26, touchDamage, '#ff6b6b');
 
     // knockback away from the blob + red flash + invulnerability flicker
     const dir = Math.sign(this.cat.x - enemy.x) || 1;
@@ -841,6 +982,117 @@ class PlayScene extends Phaser.Scene {
     });
   }
 
+  // ----------------------------------------------------------
+  // Phase 6: combos, dialogue cutscenes, stage clear
+  // ----------------------------------------------------------
+  showCombo() {
+    if (this.comboCount < 2) return; // a single hit isn't a combo yet
+    this.comboText
+      .setText(this.comboCount + ' HIT COMBO!')
+      .setAlpha(1)
+      .setVisible(true)
+      .setScale(1.3);
+    this.tweens.add({ targets: this.comboText, scale: 1, duration: 140, ease: 'Quad.easeOut' });
+  }
+
+  // --- Dialogue: typewriter box at the bottom, SPACE advances ---
+  startDialogue(lines, onDone) {
+    this.dialogueActive = true;
+    this.physics.pause();
+    this.trail.emitting = false;
+    if (!this.dlgUi) {
+      this.dlgUi = {
+        box: this.add.rectangle(480, 465, 928, 120, 0x1d1636, 0.93)
+          .setStrokeStyle(2, 0x8f86ae).setScrollFactor(0).setDepth(40),
+        portrait: this.add.image(70, 465, 'cat-maine')
+          .setScrollFactor(0).setDepth(41).setScale(1.5),
+        name: this.add.text(125, 418, '', {
+          fontFamily: 'Trebuchet MS', fontSize: '16px', fontStyle: 'bold', color: '#ffd23e',
+        }).setScrollFactor(0).setDepth(41),
+        body: this.add.text(125, 444, '', {
+          fontFamily: 'Trebuchet MS', fontSize: '15px', color: '#ffe9c9',
+          wordWrap: { width: 770 },
+        }).setScrollFactor(0).setDepth(41),
+        hint: this.add.text(920, 508, 'SPACE ▸', {
+          fontFamily: 'Trebuchet MS', fontSize: '12px', color: '#8f86ae',
+        }).setOrigin(1, 0.5).setScrollFactor(0).setDepth(41),
+      };
+    }
+    Object.values(this.dlgUi).forEach((o) => o.setVisible(true));
+    this.dlg = { lines, idx: 0, typing: false, full: '', timer: null, onDone };
+    this.showDialogueLine();
+  }
+
+  showDialogueLine() {
+    const line = this.dlg.lines[this.dlg.idx];
+    this.dlgUi.portrait.setTexture(line.portrait);
+    this.dlgUi.name.setText(line.speaker);
+    this.dlgUi.body.setText('');
+    this.dlg.full = line.text;
+    this.dlg.typing = true;
+    this.dlg.timer = this.time.addEvent({
+      delay: 16,
+      repeat: line.text.length - 1,
+      callback: () => {
+        this.dlgUi.body.setText(this.dlg.full.slice(0, this.dlgUi.body.text.length + 1));
+        if (this.dlgUi.body.text.length >= this.dlg.full.length) this.dlg.typing = false;
+      },
+    });
+  }
+
+  advanceDialogue() {
+    if (this.dlg.typing) {
+      // impatient? show the whole line at once
+      this.dlg.timer.remove();
+      this.dlg.typing = false;
+      this.dlgUi.body.setText(this.dlg.full);
+      return;
+    }
+    this.dlg.idx++;
+    if (this.dlg.idx < this.dlg.lines.length) {
+      this.showDialogueLine();
+    } else {
+      this.endDialogue();
+    }
+  }
+
+  endDialogue() {
+    Object.values(this.dlgUi).forEach((o) => o.setVisible(false));
+    this.dialogueActive = false;
+    const onDone = this.dlg.onDone;
+    this.dlg = null;
+    if (onDone) onDone();
+    else this.physics.resume();
+  }
+
+  showStageClear() {
+    this.stageCleared = true;
+    this.add
+      .rectangle(480, 270, 960, 540, 0x120c22, 0.55)
+      .setScrollFactor(0).setDepth(30);
+    this.add
+      .text(480, 225, 'STAGE CLEAR!', {
+        fontFamily: 'Trebuchet MS', fontSize: '48px', fontStyle: 'bold',
+        color: '#ffd23e', stroke: '#2b1d3a', strokeThickness: 7,
+      })
+      .setOrigin(0.5).setScrollFactor(0).setDepth(31);
+    this.add
+      .text(480, 278, 'The nap spots are safe. Press R to replay.', {
+        fontFamily: 'Trebuchet MS', fontSize: '19px', color: '#ffe9c9',
+      })
+      .setOrigin(0.5).setScrollFactor(0).setDepth(31);
+    // confetti!
+    this.add.particles(0, -10, 'star', {
+      x: { min: 0, max: 960 },
+      speedY: { min: 60, max: 140 },
+      speedX: { min: -20, max: 20 },
+      scale: { start: 1.6, end: 0.4 },
+      lifespan: 5000,
+      frequency: 60,
+      tint: [0xffd23e, 0xff6b6b, 0x7cf0ff, 0xc3f963, 0xff9ff3],
+    }).setScrollFactor(0).setDepth(32);
+  }
+
   // --- HUD: one row per roster cat, active row highlighted ---
   createHud() {
     this.hudBars = this.add.graphics().setScrollFactor(0).setDepth(10);
@@ -852,6 +1104,24 @@ class PlayScene extends Phaser.Scene {
         .setScrollFactor(0)
         .setDepth(10)
     );
+    this.comboText = this.add
+      .text(944, 40, '', {
+        fontFamily: 'Trebuchet MS', fontSize: '22px', fontStyle: 'bold',
+        color: '#7cf0ff', stroke: '#2b1d3a', strokeThickness: 5,
+      })
+      .setOrigin(1, 0)
+      .setScrollFactor(0)
+      .setDepth(10)
+      .setVisible(false);
+    this.bossLabel = this.add
+      .text(480, 28, 'BLOB KING', {
+        fontFamily: 'Trebuchet MS', fontSize: '14px', fontStyle: 'bold',
+        color: '#ff6b6b', stroke: '#2b1d3a', strokeThickness: 4,
+      })
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setDepth(10)
+      .setVisible(false);
     this.updateHud();
   }
 
@@ -899,6 +1169,20 @@ class PlayScene extends Phaser.Scene {
         }
       }
     });
+
+    // --- Blob King HP bar, top-center once you're near his arena ---
+    const boss = this.boss;
+    const bossNear = boss && boss.active && Math.abs(this.cat.x - boss.x) < 900;
+    this.bossLabel.setVisible(!!bossNear);
+    if (bossNear) {
+      g.fillStyle(0x2b2344, 0.85);
+      g.fillRect(330, 38, 300, 14);
+      const frac = Math.max(0, boss.getData('hp') / TUNING.bossHp);
+      g.fillStyle(0xff6b6b, 1);
+      g.fillRect(332, 40, 296 * frac, 10);
+      g.lineStyle(2, 0xffe9c9, 0.9);
+      g.strokeRect(329, 37, 302, 16);
+    }
   }
 
   // Quick squash & stretch tween — cheap juice that sells movement
