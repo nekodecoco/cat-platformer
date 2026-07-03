@@ -334,6 +334,7 @@ class PlayScene extends Phaser.Scene {
     this.keyX = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.X);
     this.keyC = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.C);
     this.keyR = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R);
+    this.keyF = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.F);
     this.nextAttackTime = 0;
     this.nextSwapTime = 0;
     this.invulnUntil = 0;
@@ -370,7 +371,7 @@ class PlayScene extends Phaser.Scene {
     // --- On-screen instructions ---
     this.add
       .text(16, 14,
-        'ARROWS run  |  SPACE jump / flash  |  Z swipe  |  X swap  |  C ability',
+        'ARROWS run  |  SPACE jump / flash  |  Z swipe  |  X swap  |  C ability  |  F fullscreen',
         { fontFamily: 'Trebuchet MS', fontSize: '15px', color: '#ffe9c9' })
       .setScrollFactor(0)
       .setDepth(10);
@@ -385,6 +386,9 @@ class PlayScene extends Phaser.Scene {
   // Main loop — runs every frame (~60x per second)
   // ----------------------------------------------------------
   update(time) {
+    // fullscreen toggle works everywhere, even during cutscenes
+    if (Phaser.Input.Keyboard.JustDown(this.keyF)) this.scale.toggleFullscreen();
+
     if (this.dialogueActive) {
       if (Phaser.Input.Keyboard.JustDown(this.keySpace)) this.advanceDialogue();
       return;
@@ -1145,9 +1149,13 @@ class PlayScene extends Phaser.Scene {
 window.game = new Phaser.Game({
   type: Phaser.AUTO,
   parent: 'game-container',
-  width: 960,
-  height: 540,
   pixelArt: false,
+  scale: {
+    mode: Phaser.Scale.FIT,            // fill the window, keep 16:9
+    autoCenter: Phaser.Scale.CENTER_BOTH,
+    width: 960,
+    height: 540,
+  },
   physics: {
     default: 'arcade',
     arcade: {

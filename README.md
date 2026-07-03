@@ -8,11 +8,17 @@ a boss with his own HP bar and a lunge-hop attack. All on top of the
 3-breed tag team (Maine Coon / Siamese / Persian) with physics profiles
 and signature abilities.
 
-## How to run it
+## Play it
+
+**Play online: <https://nekodecoco.github.io/cat-platformer/>**
+
+Or run it locally:
 
 1. Keep `index.html`, `game.js`, and `assets.js` in the same folder.
 2. Double-click `index.html` — it opens in your browser and just works.
    (It loads the Phaser framework from the internet the first time.)
+
+The game scales to fill the window; press **F** for fullscreen.
 
 ## Art credits
 
@@ -43,6 +49,7 @@ trimmed PNGs also live in `assets/` for reference. Effect sprites
   - *Persian — Puff Shield*: a floof bubble that absorbs the next contact
     hit within a few seconds
 - **R** — restart after a game over or stage clear
+- **F** — toggle fullscreen
 - **SPACE** during dialogue — advance (press once to finish the line,
   again to continue)
 
