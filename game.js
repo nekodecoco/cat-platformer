@@ -1,12 +1,15 @@
 // ============================================================
-//  CAT PLATFORMER — PHASE 1 PROTOTYPE
-//  One controllable cat, platforms, run + jump + Flash Jump.
+//  CAT PLATFORMER — PHASE 2 PROTOTYPE
+//  One controllable cat, platforms, run + jump + Flash Jump,
+//  plus melee combat: claw swipe, patrolling enemy blobs, and
+//  pop-up damage numbers.
 //
 //  CONTROLS
 //    ← →        run
 //    SPACE / ↑  jump (tap = short hop, hold = full jump)
 //    SPACE in mid-air = FLASH JUMP (air dash in the direction
 //    you're facing; hold ↑ for a vertical flash jump instead)
+//    Z          claw swipe (hits enemies in front of you)
 //
 //  GAME-FEEL FEATURES ALREADY TUNED IN:
 //    - Coyote time  : you can still jump ~0.1s after walking off a ledge
@@ -27,6 +30,17 @@ const TUNING = {
   flashJumpX: 500,      // horizontal flash-jump burst speed
   flashJumpLift: -240,  // small upward pop during horizontal flash jump
   flashJumpUpY: -430,   // vertical flash-jump strength (hold UP)
+
+  // --- Phase 2: combat & enemies ---
+  attackDamage: 1,        // damage per swipe hit
+  attackCooldownMs: 320,  // minimum time between swipes
+  attackReach: 46,        // how far the swipe hitbox extends in front
+  attackHeight: 40,       // vertical size of the swipe hitbox
+  attackKnockbackX: 240,  // horizontal shove on hit enemies
+  attackKnockbackY: -140, // upward pop on hit enemies
+  enemySpeed: 55,         // blob patrol speed (px/sec)
+  enemyHp: 3,             // swipes needed to defeat a blob
+  enemyStunMs: 220,       // how long knockback overrides patrolling
 };
 
 const WORLD_WIDTH = 2400;
@@ -83,6 +97,28 @@ class PlayScene extends Phaser.Scene {
     g.fillStyle(0xa9744f); // top highlight strip
     g.fillRect(0, 0, 64, 6);
     g.generateTexture('platform', 64, 24);
+
+    // --- Enemy blob (grumpy green slime, 36x26) ---
+    g.clear();
+    g.fillStyle(0x58b048);
+    g.fillRoundedRect(0, 4, 36, 22, { tl: 16, tr: 16, bl: 6, br: 6 });
+    g.fillStyle(0x7ed468); // jelly highlight
+    g.fillRoundedRect(4, 8, 28, 7, 3);
+    g.fillStyle(0xffffff);
+    g.fillCircle(12, 15, 4);
+    g.fillCircle(24, 15, 4);
+    g.fillStyle(0x203020);
+    g.fillCircle(12, 16, 2);
+    g.fillCircle(24, 16, 2);
+    g.generateTexture('blob', 36, 26);
+
+    // --- Claw swipe (three tapered streaks) ---
+    g.clear();
+    g.fillStyle(0xffffff, 0.9);
+    g.fillTriangle(0, 4, 40, 0, 40, 8);
+    g.fillTriangle(0, 18, 44, 14, 44, 22);
+    g.fillTriangle(0, 32, 40, 28, 40, 36);
+    g.generateTexture('swipe', 44, 36);
 
     // --- Soft puff for the Flash Jump smoke trail ---
     g.clear();
@@ -153,9 +189,29 @@ class PlayScene extends Phaser.Scene {
     this.physics.add.collider(this.cat, this.platforms);
     this.cameras.main.startFollow(this.cat, true, 0.12, 0.12);
 
+    // --- Enemies: blobs that patrol platforms and turn at edges ---
+    this.enemies = this.physics.add.group();
+    const blobSpawns = [
+      [860, 340],                 // on the 4-tile platform at x=800
+      [1250, WORLD_HEIGHT - 60],  // on the ground, mid-world
+      [1660, 520],                // on the 4-tile platform at x=1600
+    ];
+    for (const [bx, by] of blobSpawns) {
+      const blob = this.enemies.create(bx, by, 'blob');
+      blob.setCollideWorldBounds(true);
+      blob.body.setGravityY(TUNING.gravity - this.physics.world.gravity.y);
+      blob.body.setSize(32, 20).setOffset(2, 6);
+      blob.setData('hp', TUNING.enemyHp);
+      blob.setData('dir', Phaser.Math.RND.pick([-1, 1]));
+      blob.setData('stunUntil', 0);
+    }
+    this.physics.add.collider(this.enemies, this.platforms);
+
     // --- Input ---
     this.cursors = this.input.keyboard.createCursorKeys();
     this.keySpace = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+    this.keyZ = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.Z);
+    this.nextAttackTime = 0;
 
     // --- Game-feel state ---
     this.lastGroundedTime = 0;   // for coyote time
@@ -179,7 +235,7 @@ class PlayScene extends Phaser.Scene {
     // --- On-screen instructions ---
     this.add
       .text(16, 14,
-        'ARROWS to run  |  SPACE to jump  |  SPACE in mid-air = FLASH JUMP',
+        'ARROWS to run  |  SPACE to jump / FLASH JUMP in mid-air  |  Z to swipe',
         { fontFamily: 'Trebuchet MS', fontSize: '15px', color: '#ffe9c9' })
       .setScrollFactor(0)
       .setDepth(10);
@@ -267,6 +323,128 @@ class PlayScene extends Phaser.Scene {
       this.squash(0.8, 1.2);
     }
     this.wasAirborne = !onGround;
+
+    // --- Claw swipe ---
+    if (Phaser.Input.Keyboard.JustDown(this.keyZ) && time >= this.nextAttackTime) {
+      this.nextAttackTime = time + TUNING.attackCooldownMs;
+      this.swipeAttack();
+    }
+
+    this.updateEnemies(time);
+  }
+
+  // ----------------------------------------------------------
+  // Phase 2: combat
+  // ----------------------------------------------------------
+  swipeAttack() {
+    const reachCenter = this.cat.x + this.facing * (20 + TUNING.attackReach / 2);
+
+    // claw-streak flash in front of the cat
+    const fx = this.add.image(reachCenter, this.cat.y - 2, 'swipe');
+    fx.setFlipX(this.facing < 0);
+    fx.setTint(0xffe9c9);
+    this.tweens.add({
+      targets: fx,
+      alpha: 0,
+      x: fx.x + this.facing * 14,
+      duration: 140,
+      ease: 'Quad.easeOut',
+      onComplete: () => fx.destroy(),
+    });
+
+    const hitRect = new Phaser.Geom.Rectangle(
+      reachCenter - TUNING.attackReach / 2,
+      this.cat.y - TUNING.attackHeight / 2,
+      TUNING.attackReach,
+      TUNING.attackHeight
+    );
+    for (const enemy of this.enemies.getChildren()) {
+      if (!enemy.active) continue;
+      if (Phaser.Geom.Rectangle.Overlaps(hitRect, enemy.getBounds())) {
+        this.hitEnemy(enemy);
+      }
+    }
+  }
+
+  hitEnemy(enemy) {
+    const hp = enemy.getData('hp') - TUNING.attackDamage;
+    enemy.setData('hp', hp);
+    this.popDamageNumber(enemy.x, enemy.y - 18, TUNING.attackDamage);
+
+    // knockback away from the cat + brief white flash
+    enemy.setVelocity(this.facing * TUNING.attackKnockbackX, TUNING.attackKnockbackY);
+    enemy.setData('stunUntil', this.time.now + TUNING.enemyStunMs);
+    enemy.setTintFill(0xffffff);
+    this.time.delayedCall(80, () => enemy.active && enemy.clearTint());
+
+    if (hp <= 0) this.defeatEnemy(enemy);
+  }
+
+  defeatEnemy(enemy) {
+    enemy.body.enable = false;
+    this.add.particles(enemy.x, enemy.y, 'puff', {
+      speed: { min: 40, max: 120 },
+      scale: { start: 0.6, end: 0 },
+      lifespan: 400,
+      tint: 0x9fe87c,
+      emitting: false,
+    }).explode(10);
+    this.tweens.add({
+      targets: enemy,
+      scaleX: 1.4,
+      scaleY: 0.2,
+      alpha: 0,
+      duration: 180,
+      ease: 'Quad.easeIn',
+      onComplete: () => enemy.destroy(),
+    });
+  }
+
+  popDamageNumber(x, y, amount) {
+    const colors = ['#ffd23e', '#ff6b6b', '#7cf0ff', '#c3f963', '#ff9ff3'];
+    const txt = this.add
+      .text(x + Phaser.Math.Between(-6, 6), y, `${amount}`, {
+        fontFamily: 'Trebuchet MS',
+        fontSize: '22px',
+        fontStyle: 'bold',
+        color: Phaser.Math.RND.pick(colors),
+        stroke: '#2b1d3a',
+        strokeThickness: 4,
+      })
+      .setOrigin(0.5)
+      .setDepth(20);
+    this.tweens.add({
+      targets: txt,
+      y: y - 46,
+      alpha: 0,
+      scale: 1.25,
+      duration: 700,
+      ease: 'Cubic.easeOut',
+      onComplete: () => txt.destroy(),
+    });
+  }
+
+  // Patrol: walk forward, turn at walls and at platform edges
+  updateEnemies(time) {
+    for (const enemy of this.enemies.getChildren()) {
+      if (!enemy.active || !enemy.body.enable) continue;
+      if (time < enemy.getData('stunUntil')) continue; // knockback in progress
+
+      let dir = enemy.getData('dir');
+      if (enemy.body.blocked.down) {
+        if (enemy.body.blocked.left) dir = 1;
+        else if (enemy.body.blocked.right) dir = -1;
+        else {
+          // no floor just past the front foot? turn around
+          const aheadX = enemy.x + dir * (enemy.body.width / 2 + 6);
+          const floor = this.physics.overlapRect(aheadX - 2, enemy.body.bottom + 2, 4, 10, false, true);
+          if (floor.length === 0) dir = -dir;
+        }
+      }
+      enemy.setData('dir', dir);
+      enemy.setVelocityX(dir * TUNING.enemySpeed);
+      enemy.setFlipX(dir < 0);
+    }
   }
 
   // Quick squash & stretch tween — cheap juice that sells movement
@@ -284,7 +462,8 @@ class PlayScene extends Phaser.Scene {
 }
 
 // ---------- Boot the game ----------
-new Phaser.Game({
+// (kept on window so you can poke at it from the browser console)
+window.game = new Phaser.Game({
   type: Phaser.AUTO,
   parent: 'game-container',
   width: 960,
