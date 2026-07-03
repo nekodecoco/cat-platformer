@@ -1,7 +1,7 @@
 // ============================================================
 //  CAT PLATFORMER — PHASE 6 PROTOTYPE
-//  The first campaign stage: fight through the Blob King's goo
-//  squad across a long stage and dethrone the king himself.
+//  The first campaign stage: fight through the Hog King's crab
+//  patrol across a long stage and dethrone the king himself.
 //  Juggle combos, dialogue cutscenes, boss fight — plus the
 //  3-breed tag team with signature abilities from Phase 5.
 //
@@ -47,7 +47,7 @@ const TUNING = {
   juggleKnockbackY: -300, // harder launch on juggled enemies (keeps them up)
   comboTimeoutMs: 1800,   // stop hitting this long and the combo fades
 
-  // --- The Blob King (Phase 6 boss) ---
+  // --- The Hog King (Phase 6 boss) ---
   bossHp: 20,
   bossSpeed: 40,          // patrol speed
   bossTouchDamage: 2,     // royal mass hurts more
@@ -70,11 +70,7 @@ const TUNING = {
 const BREEDS = [
   {
     name: 'Maine Coon', // the heavyweight: slow, stompy, hits like a truck
-    texture: 'cat-maine',
-    palette: {
-      tail: 0x9a5b33, body: 0xb3703f, inner: 0xe3b58e,
-      eyes: 0x3a2a1a, nose: 0x8a4630, paws: 0xe8cdb2,
-    },
+    texture: 'cat-maine', // Kenney cube lion — the mane sells the mass
     profile: {
       maxHp: 6,
       runSpeed: 185,      // lumbering
@@ -96,11 +92,7 @@ const BREEDS = [
   },
   {
     name: 'Siamese', // the speedster: fastest run and flash jump, light hits
-    texture: 'cat-siamese',
-    palette: {
-      tail: 0x6b5340, body: 0xe8d8c0, inner: 0xd8b09a,
-      eyes: 0x4a7fd0, nose: 0x9a6a5a, paws: 0x6b5340,
-    },
+    texture: 'cat-siamese', // Kenney cube cat — sleek and pointy-eared
     profile: {
       maxHp: 4,
       runSpeed: 300,
@@ -121,11 +113,7 @@ const BREEDS = [
   },
   {
     name: 'Persian', // the cloud: floaty low gravity, slow, highest HP
-    texture: 'cat-persian',
-    palette: {
-      tail: 0xd8d8e2, body: 0xf0eef5, inner: 0xf5c9d4,
-      eyes: 0xc9862a, nose: 0xe0a0b0, paws: 0xffffff,
-    },
+    texture: 'cat-persian', // Kenney cube polar — maximum white floof
     profile: {
       maxHp: 7,
       runSpeed: 175,
@@ -145,21 +133,21 @@ const BREEDS = [
   },
 ];
 
-const WORLD_WIDTH = 4200; // campaign stage: ends at the Blob King's arena
+const WORLD_WIDTH = 4200; // campaign stage: ends at the Hog King's arena
 const WORLD_HEIGHT = 720;
 
 // ---------- Cutscene dialogue (Phase 6) ----------
 const INTRO_DIALOGUE = [
   { speaker: 'Maine Coon', portrait: 'cat-maine',
-    text: 'The Blob King oozed over our nap spots. Every. Last. Sunbeam.' },
+    text: 'The Hog King trampled our nap spots. Every. Last. Sunbeam.' },
   { speaker: 'Siamese', portrait: 'cat-siamese',
-    text: 'So we scratch through his goo squad and take the naps back. Easy.' },
+    text: 'So we scratch through his crab patrol and take the naps back. Easy.' },
   { speaker: 'Persian', portrait: 'cat-persian',
-    text: 'I was woken up for this. The Blob King will answer for that.' },
+    text: 'I was woken up for this. The Hog King will answer for that.' },
 ];
 const CLEAR_DIALOGUE = [
-  { speaker: 'Blob King', portrait: 'boss',
-    text: 'Splat... I only wanted... a warm place to puddle...' },
+  { speaker: 'Hog King', portrait: 'boss',
+    text: 'Oink... I only wanted... a warm place to wallow...' },
   { speaker: 'Maine Coon', portrait: 'cat-maine',
     text: 'The sunbeams are ours again. Team, well scratched.' },
   { speaker: 'Siamese', portrait: 'cat-siamese',
@@ -174,100 +162,25 @@ class PlayScene extends Phaser.Scene {
     super('play');
   }
 
-  // ----------------------------------------------------------
-  // Create all textures in code so we need zero image files.
-  // Later, replace these with real sprite sheets.
-  // ----------------------------------------------------------
-  // Draw one 48x40 chibi cat in the given palette
-  makeCatTexture(g, key, p) {
-    g.clear();
-    // tail
-    g.fillStyle(p.tail);
-    g.fillRoundedRect(0, 14, 14, 7, 3);
-    // body
-    g.fillStyle(p.body);
-    g.fillRoundedRect(8, 8, 34, 26, 10);
-    // ears (two triangles)
-    g.fillTriangle(14, 12, 19, 0, 24, 12);
-    g.fillTriangle(26, 12, 31, 0, 36, 12);
-    // inner ears
-    g.fillStyle(p.inner);
-    g.fillTriangle(16, 10, 19, 4, 22, 10);
-    g.fillTriangle(28, 10, 31, 4, 34, 10);
-    // eyes (big glossy chibi eyes)
-    g.fillStyle(p.eyes);
-    g.fillCircle(21, 18, 4);
-    g.fillCircle(33, 18, 4);
-    g.fillStyle(0xffffff);
-    g.fillCircle(22.5, 16.5, 1.5);
-    g.fillCircle(34.5, 16.5, 1.5);
-    // nose
-    g.fillStyle(p.nose);
-    g.fillTriangle(25, 23, 29, 23, 27, 26);
-    // paws
-    g.fillStyle(p.paws);
-    g.fillRoundedRect(12, 30, 9, 8, 4);
-    g.fillRoundedRect(29, 30, 9, 8, 4);
-    g.generateTexture(key, 48, 40);
+  // Kenney sprites (Cube Pets + Platformer Kit previews, CC0) are
+  // embedded as data URIs in assets.js — no server needed to load them.
+  preload() {
+    for (const [key, uri] of Object.entries(ASSETS)) {
+      this.load.image(key, uri);
+    }
   }
 
+  // ----------------------------------------------------------
+  // Effect textures (swipe streaks, puffs, stars) are still
+  // drawn in code; everything else comes from the Kenney packs.
+  // ----------------------------------------------------------
   makeTextures() {
-    // scene.restart() re-runs create(); textures survive, so skip regen
-    if (this.textures.exists(BREEDS[0].texture)) return;
+    // scene.restart() re-runs create(); textures survive, so skip regen.
+    // Cats, enemies, boss, and platforms now come from assets.js (Kenney);
+    // only the effect textures are still drawn in code.
+    if (this.textures.exists('puff')) return;
 
     const g = this.make.graphics({ x: 0, y: 0, add: false });
-
-    // --- The roster cats, one texture per breed palette ---
-    for (const breed of BREEDS) {
-      this.makeCatTexture(g, breed.texture, breed.palette);
-    }
-
-    // --- Ground / platform tiles ---
-    g.clear();
-    g.fillStyle(0x8a5a44); // warm wood brown
-    g.fillRect(0, 0, 64, 24);
-    g.fillStyle(0xa9744f); // top highlight strip
-    g.fillRect(0, 0, 64, 6);
-    g.generateTexture('platform', 64, 24);
-
-    // --- Enemy blob (grumpy green slime, 36x26) ---
-    g.clear();
-    g.fillStyle(0x58b048);
-    g.fillRoundedRect(0, 4, 36, 22, { tl: 16, tr: 16, bl: 6, br: 6 });
-    g.fillStyle(0x7ed468); // jelly highlight
-    g.fillRoundedRect(4, 8, 28, 7, 3);
-    g.fillStyle(0xffffff);
-    g.fillCircle(12, 15, 4);
-    g.fillCircle(24, 15, 4);
-    g.fillStyle(0x203020);
-    g.fillCircle(12, 16, 2);
-    g.fillCircle(24, 16, 2);
-    g.generateTexture('blob', 36, 26);
-
-    // --- The Blob King (72x52 crowned slime, very grumpy) ---
-    g.clear();
-    // crown
-    g.fillStyle(0xffd23e);
-    g.fillTriangle(22, 12, 26, 0, 30, 12);
-    g.fillTriangle(30, 12, 36, 2, 42, 12);
-    g.fillTriangle(42, 12, 46, 0, 50, 12);
-    g.fillRect(22, 8, 28, 6);
-    // body
-    g.fillStyle(0x58b048);
-    g.fillRoundedRect(0, 12, 72, 40, { tl: 26, tr: 26, bl: 10, br: 10 });
-    g.fillStyle(0x7ed468); // jelly highlight
-    g.fillRoundedRect(8, 18, 56, 12, 6);
-    // angry eyes + brows
-    g.fillStyle(0xffffff);
-    g.fillCircle(26, 34, 7);
-    g.fillCircle(46, 34, 7);
-    g.fillStyle(0x203020);
-    g.fillCircle(26, 36, 3.5);
-    g.fillCircle(46, 36, 3.5);
-    g.fillStyle(0x2e5e2e);
-    g.fillTriangle(17, 27, 33, 22, 33, 28);
-    g.fillTriangle(55, 27, 39, 22, 39, 28);
-    g.generateTexture('boss', 72, 52);
 
     // --- Claw swipe (three tapered streaks) ---
     g.clear();
@@ -315,7 +228,8 @@ class PlayScene extends Phaser.Scene {
 
     // Ground: a full strip along the bottom
     for (let x = 0; x < WORLD_WIDTH; x += 64) {
-      this.platforms.create(x + 32, WORLD_HEIGHT - 12, 'platform');
+      this.platforms.create(x + 32, WORLD_HEIGHT - 12, 'platform')
+        .setDisplaySize(64, 44).refreshBody();
     }
 
     // Floating platforms at assorted heights: [x, y, widthInTiles]
@@ -338,18 +252,35 @@ class PlayScene extends Phaser.Scene {
     ];
     for (const [px, py, tiles] of layout) {
       for (let i = 0; i < tiles; i++) {
-        this.platforms.create(px + i * 64, py, 'platform');
+        this.platforms.create(px + i * 64, py, 'platform')
+          .setDisplaySize(64, 44).refreshBody();
       }
+    }
+
+    // --- Stage dressing (Kenney Platformer Kit, no physics) ---
+    const groundTop = WORLD_HEIGHT - 34; // top of the ground blocks
+    const dressing = [
+      ['deco-tree', 180, 2.2], ['deco-flowers', 420, 1.5],
+      ['deco-mushrooms', 700, 1.5], ['deco-pine', 980, 2.2],
+      ['deco-grass', 1180, 1.5], ['deco-rocks', 1520, 1.5],
+      ['deco-tree', 1780, 2.2], ['deco-flowers', 2050, 1.5],
+      ['deco-pine', 2380, 2.2], ['deco-grass', 2680, 1.5],
+      ['deco-mushrooms', 3100, 1.5], ['deco-rocks', 3400, 1.5],
+      ['deco-tree', 3600, 2.2], ['deco-flag', 3700, 2],
+      ['deco-pine', 4120, 2.2],
+    ];
+    for (const [key, dx, scale] of dressing) {
+      this.add.image(dx, groundTop + 2, key).setOrigin(0.5, 1).setScale(scale);
     }
 
     // --- The tag team: one cat per breed, one on the field at a time ---
     this.roster = BREEDS.map((b) => ({ ...b, hp: b.profile.maxHp }));
     this.activeIndex = 0;
 
-    this.cat = this.physics.add.sprite(120, WORLD_HEIGHT - 80, this.roster[0].texture);
+    this.cat = this.physics.add.sprite(120, WORLD_HEIGHT - 100, this.roster[0].texture);
     this.cat.setCollideWorldBounds(true);
     this.cat.body.setGravityY(this.activeProfile().gravity - this.physics.world.gravity.y);
-    this.cat.body.setSize(34, 30).setOffset(8, 8);
+    this.applyCatBody();
     this.cat.setMaxVelocity(700, 900); // roomy enough for Siamese flash jumps
 
     this.physics.add.collider(this.cat, this.platforms);
@@ -369,20 +300,21 @@ class PlayScene extends Phaser.Scene {
       [2950, WORLD_HEIGHT - 60],  // ground guard before the arena
     ];
     for (const [bx, by] of blobSpawns) {
-      const blob = this.enemies.create(bx, by, 'blob');
+      const blob = this.enemies.create(bx, by, 'blob'); // Kenney cube crab
       blob.setCollideWorldBounds(true);
       blob.body.setGravityY(TUNING.enemyGravity - this.physics.world.gravity.y);
-      blob.body.setSize(32, 20).setOffset(2, 6);
+      blob.body.setSize(28, 20).setOffset(2, 5);
       blob.setData('hp', TUNING.enemyHp);
       blob.setData('dir', Phaser.Math.RND.pick([-1, 1]));
       blob.setData('stunUntil', 0);
     }
 
-    // --- The Blob King waits at the end of the stage ---
-    this.boss = this.enemies.create(3950, WORLD_HEIGHT - 80, 'boss');
+    // --- The Hog King waits at the end of the stage ---
+    this.boss = this.enemies.create(3950, WORLD_HEIGHT - 120, 'boss'); // Kenney cube hog
     this.boss.setCollideWorldBounds(true);
+    this.boss.setScale(1.9); // king-sized
     this.boss.body.setGravityY(TUNING.enemyGravity - this.physics.world.gravity.y);
-    this.boss.body.setSize(64, 40).setOffset(4, 10);
+    this.boss.body.setSize(36, 40).setOffset(2, 5);
     this.boss.setData('hp', TUNING.bossHp);
     this.boss.setData('dir', -1);
     this.boss.setData('stunUntil', 0);
@@ -658,8 +590,8 @@ class PlayScene extends Phaser.Scene {
     }).explode(isBoss ? 26 : 10);
     this.tweens.add({
       targets: enemy,
-      scaleX: 1.4,
-      scaleY: 0.2,
+      scaleX: enemy.scaleX * 1.4, // relative: the boss is drawn at 1.9x
+      scaleY: enemy.scaleY * 0.2,
       alpha: 0,
       duration: isBoss ? 450 : 180,
       ease: 'Quad.easeIn',
@@ -706,7 +638,7 @@ class PlayScene extends Phaser.Scene {
       if (!enemy.active || !enemy.body.enable) continue;
       if (time < enemy.getData('stunUntil')) continue; // knockback in progress
 
-      // the Blob King lunge-hops at cats that get close
+      // the Hog King lunge-hops at cats that get close
       if (
         enemy.getData('isBoss') &&
         enemy.body.blocked.down &&
@@ -745,6 +677,14 @@ class PlayScene extends Phaser.Scene {
   // ----------------------------------------------------------
   activeProfile() {
     return this.roster[this.activeIndex].profile;
+  }
+
+  // Fit the physics body to the current breed's frame: fixed 30px-wide
+  // hitbox, feet flush with the frame bottom so every cat stands cleanly
+  applyCatBody() {
+    const f = this.cat.frame;
+    this.cat.body.setSize(30, f.realHeight - 12);
+    this.cat.body.setOffset((f.realWidth - 30) / 2, 12);
   }
 
   onTouchEnemy(enemy) {
@@ -802,6 +742,7 @@ class PlayScene extends Phaser.Scene {
   swapTo(i, withAssist) {
     this.activeIndex = i;
     this.cat.setTexture(this.roster[i].texture);
+    this.applyCatBody(); // each Kenney pet has slightly different dimensions
     // the incoming breed's physics take over immediately
     this.cat.body.setGravityY(this.activeProfile().gravity - this.physics.world.gravity.y);
     // any Persian shield belongs to the cat that just left
@@ -1114,7 +1055,7 @@ class PlayScene extends Phaser.Scene {
       .setDepth(10)
       .setVisible(false);
     this.bossLabel = this.add
-      .text(480, 28, 'BLOB KING', {
+      .text(480, 28, 'HOG KING', {
         fontFamily: 'Trebuchet MS', fontSize: '14px', fontStyle: 'bold',
         color: '#ff6b6b', stroke: '#2b1d3a', strokeThickness: 4,
       })
@@ -1170,7 +1111,7 @@ class PlayScene extends Phaser.Scene {
       }
     });
 
-    // --- Blob King HP bar, top-center once you're near his arena ---
+    // --- Hog King HP bar, top-center once you're near his arena ---
     const boss = this.boss;
     const bossNear = boss && boss.active && Math.abs(this.cat.x - boss.x) < 900;
     this.bossLabel.setVisible(!!bossNear);
@@ -1216,3 +1157,4 @@ window.game = new Phaser.Game({
   },
   scene: [PlayScene],
 });
+
