@@ -1,8 +1,8 @@
 // ============================================================
-//  CAT PLATFORMER — PHASE 2 PROTOTYPE
-//  One controllable cat, platforms, run + jump + Flash Jump,
-//  plus melee combat: claw swipe, patrolling enemy blobs, and
-//  pop-up damage numbers.
+//  CAT PLATFORMER — PHASE 3 PROTOTYPE
+//  A tag team of 3 cats with independent HP, platforms,
+//  run + jump + Flash Jump, claw swipe combat, patrolling
+//  enemy blobs, damage numbers, and a game-over screen.
 //
 //  CONTROLS
 //    ← →        run
@@ -10,6 +10,8 @@
 //    SPACE in mid-air = FLASH JUMP (air dash in the direction
 //    you're facing; hold ↑ for a vertical flash jump instead)
 //    Z          claw swipe (hits enemies in front of you)
+//    X          tag-swap to the next living cat
+//    R          restart after a game over
 //
 //  GAME-FEEL FEATURES ALREADY TUNED IN:
 //    - Coyote time  : you can still jump ~0.1s after walking off a ledge
@@ -41,6 +43,15 @@ const TUNING = {
   enemySpeed: 55,         // blob patrol speed (px/sec)
   enemyHp: 3,             // swipes needed to defeat a blob
   enemyStunMs: 220,       // how long knockback overrides patrolling
+
+  // --- Phase 3: tag team & taking damage ---
+  catMaxHp: 5,            // HP each roster cat starts with
+  touchDamage: 1,         // damage from bumping into a blob
+  hurtInvulnMs: 900,      // invulnerability window after taking a hit
+  hurtLockMs: 220,        // how long knockback overrides your controls
+  hurtKnockbackX: 260,    // horizontal shove when you get hit
+  hurtKnockbackY: -260,   // upward pop when you get hit
+  swapCooldownMs: 400,    // minimum time between tag swaps
 };
 
 const WORLD_WIDTH = 2400;
@@ -56,39 +67,58 @@ class PlayScene extends Phaser.Scene {
   // Create all textures in code so we need zero image files.
   // Later, replace these with real sprite sheets.
   // ----------------------------------------------------------
-  makeTextures() {
-    const g = this.make.graphics({ x: 0, y: 0, add: false });
-
-    // --- The cat (orange shorthair placeholder, 48x40) ---
+  // Draw one 48x40 chibi cat in the given palette
+  makeCatTexture(g, key, p) {
     g.clear();
     // tail
-    g.fillStyle(0xe8853b);
+    g.fillStyle(p.tail);
     g.fillRoundedRect(0, 14, 14, 7, 3);
     // body
-    g.fillStyle(0xf59b4c);
+    g.fillStyle(p.body);
     g.fillRoundedRect(8, 8, 34, 26, 10);
     // ears (two triangles)
     g.fillTriangle(14, 12, 19, 0, 24, 12);
     g.fillTriangle(26, 12, 31, 0, 36, 12);
     // inner ears
-    g.fillStyle(0xffc9a3);
+    g.fillStyle(p.inner);
     g.fillTriangle(16, 10, 19, 4, 22, 10);
     g.fillTriangle(28, 10, 31, 4, 34, 10);
     // eyes (big glossy chibi eyes)
-    g.fillStyle(0x3a2a1a);
+    g.fillStyle(p.eyes);
     g.fillCircle(21, 18, 4);
     g.fillCircle(33, 18, 4);
     g.fillStyle(0xffffff);
     g.fillCircle(22.5, 16.5, 1.5);
     g.fillCircle(34.5, 16.5, 1.5);
     // nose
-    g.fillStyle(0xd96a4b);
+    g.fillStyle(p.nose);
     g.fillTriangle(25, 23, 29, 23, 27, 26);
     // paws
-    g.fillStyle(0xffe3c9);
+    g.fillStyle(p.paws);
     g.fillRoundedRect(12, 30, 9, 8, 4);
     g.fillRoundedRect(29, 30, 9, 8, 4);
-    g.generateTexture('cat', 48, 40);
+    g.generateTexture(key, 48, 40);
+  }
+
+  makeTextures() {
+    // scene.restart() re-runs create(); textures survive, so skip regen
+    if (this.textures.exists('cat-mochi')) return;
+
+    const g = this.make.graphics({ x: 0, y: 0, add: false });
+
+    // --- The roster cats (placeholder palettes until Phase 4 breeds) ---
+    this.makeCatTexture(g, 'cat-mochi', { // orange shorthair
+      tail: 0xe8853b, body: 0xf59b4c, inner: 0xffc9a3,
+      eyes: 0x3a2a1a, nose: 0xd96a4b, paws: 0xffe3c9,
+    });
+    this.makeCatTexture(g, 'cat-sora', { // blue-gray
+      tail: 0x8290ad, body: 0x9fb0d0, inner: 0xdde4f5,
+      eyes: 0x2e3550, nose: 0xe08098, paws: 0xedf1fa,
+    });
+    this.makeCatTexture(g, 'cat-nori', { // charcoal with golden eyes
+      tail: 0x4a4650, body: 0x615c6b, inner: 0xb3aac2,
+      eyes: 0xf0c95c, nose: 0xb56a86, paws: 0xc9c2d6,
+    });
 
     // --- Ground / platform tiles ---
     g.clear();
@@ -179,8 +209,15 @@ class PlayScene extends Phaser.Scene {
       }
     }
 
-    // --- The cat ---
-    this.cat = this.physics.add.sprite(120, WORLD_HEIGHT - 80, 'cat');
+    // --- The tag team: 3 cats, one on the field at a time ---
+    this.roster = [
+      { name: 'Mochi', texture: 'cat-mochi', hp: TUNING.catMaxHp },
+      { name: 'Sora', texture: 'cat-sora', hp: TUNING.catMaxHp },
+      { name: 'Nori', texture: 'cat-nori', hp: TUNING.catMaxHp },
+    ];
+    this.activeIndex = 0;
+
+    this.cat = this.physics.add.sprite(120, WORLD_HEIGHT - 80, this.roster[0].texture);
     this.cat.setCollideWorldBounds(true);
     this.cat.body.setGravityY(TUNING.gravity - this.physics.world.gravity.y);
     this.cat.body.setSize(34, 30).setOffset(8, 8);
@@ -207,11 +244,20 @@ class PlayScene extends Phaser.Scene {
     }
     this.physics.add.collider(this.enemies, this.platforms);
 
+    // Bumping into a blob hurts the active cat
+    this.physics.add.overlap(this.cat, this.enemies, (_cat, enemy) => this.onTouchEnemy(enemy));
+
     // --- Input ---
     this.cursors = this.input.keyboard.createCursorKeys();
     this.keySpace = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
     this.keyZ = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.Z);
+    this.keyX = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.X);
+    this.keyR = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R);
     this.nextAttackTime = 0;
+    this.nextSwapTime = 0;
+    this.invulnUntil = 0;
+    this.controlLockUntil = 0;
+    this.gameOver = false;
 
     // --- Game-feel state ---
     this.lastGroundedTime = 0;   // for coyote time
@@ -235,16 +281,23 @@ class PlayScene extends Phaser.Scene {
     // --- On-screen instructions ---
     this.add
       .text(16, 14,
-        'ARROWS to run  |  SPACE to jump / FLASH JUMP in mid-air  |  Z to swipe',
+        'ARROWS run  |  SPACE jump / FLASH JUMP  |  Z swipe  |  X swap cat',
         { fontFamily: 'Trebuchet MS', fontSize: '15px', color: '#ffe9c9' })
       .setScrollFactor(0)
       .setDepth(10);
+
+    this.createHud();
   }
 
   // ----------------------------------------------------------
   // Main loop — runs every frame (~60x per second)
   // ----------------------------------------------------------
   update(time) {
+    if (this.gameOver) {
+      if (Phaser.Input.Keyboard.JustDown(this.keyR)) this.scene.restart();
+      return;
+    }
+
     const cat = this.cat;
     const onGround = cat.body.blocked.down || cat.body.touching.down;
 
@@ -257,7 +310,9 @@ class PlayScene extends Phaser.Scene {
 
     // --- Horizontal movement ---
     const accel = onGround ? TUNING.runAccel : TUNING.airAccel;
-    if (this.cursors.left.isDown) {
+    if (time < this.controlLockUntil) {
+      cat.setAccelerationX(0); // hurt knockback owns the cat for a beat
+    } else if (this.cursors.left.isDown) {
       cat.setAccelerationX(-accel);
       this.facing = -1;
       cat.setFlipX(true);
@@ -271,7 +326,8 @@ class PlayScene extends Phaser.Scene {
       cat.setVelocityX(cat.body.velocity.x * (onGround ? 0.8 : 0.97));
     }
     // clamp run speed (acceleration model can exceed it slightly)
-    if (Math.abs(cat.body.velocity.x) > TUNING.runSpeed && !this.isDashing) {
+    if (Math.abs(cat.body.velocity.x) > TUNING.runSpeed && !this.isDashing &&
+        time >= this.controlLockUntil) {
       cat.setVelocityX(Math.sign(cat.body.velocity.x) * TUNING.runSpeed);
     }
 
@@ -328,6 +384,15 @@ class PlayScene extends Phaser.Scene {
     if (Phaser.Input.Keyboard.JustDown(this.keyZ) && time >= this.nextAttackTime) {
       this.nextAttackTime = time + TUNING.attackCooldownMs;
       this.swipeAttack();
+    }
+
+    // --- Tag swap ---
+    if (Phaser.Input.Keyboard.JustDown(this.keyX) && time >= this.nextSwapTime) {
+      const next = this.nextLivingCat(this.activeIndex);
+      if (next !== null) {
+        this.nextSwapTime = time + TUNING.swapCooldownMs;
+        this.swapTo(next);
+      }
     }
 
     this.updateEnemies(time);
@@ -400,14 +465,14 @@ class PlayScene extends Phaser.Scene {
     });
   }
 
-  popDamageNumber(x, y, amount) {
+  popDamageNumber(x, y, amount, color) {
     const colors = ['#ffd23e', '#ff6b6b', '#7cf0ff', '#c3f963', '#ff9ff3'];
     const txt = this.add
       .text(x + Phaser.Math.Between(-6, 6), y, `${amount}`, {
         fontFamily: 'Trebuchet MS',
         fontSize: '22px',
         fontStyle: 'bold',
-        color: Phaser.Math.RND.pick(colors),
+        color: color || Phaser.Math.RND.pick(colors),
         stroke: '#2b1d3a',
         strokeThickness: 4,
       })
@@ -445,6 +510,132 @@ class PlayScene extends Phaser.Scene {
       enemy.setVelocityX(dir * TUNING.enemySpeed);
       enemy.setFlipX(dir < 0);
     }
+  }
+
+  // ----------------------------------------------------------
+  // Phase 3: tag team, HP, and taking damage
+  // ----------------------------------------------------------
+  onTouchEnemy(enemy) {
+    if (this.gameOver || !enemy.active || !enemy.body.enable) return;
+    const now = this.time.now;
+    if (now < this.invulnUntil) return;
+
+    const active = this.roster[this.activeIndex];
+    active.hp = Math.max(0, active.hp - TUNING.touchDamage);
+    this.invulnUntil = now + TUNING.hurtInvulnMs;
+    this.controlLockUntil = now + TUNING.hurtLockMs;
+
+    this.popDamageNumber(this.cat.x, this.cat.y - 26, TUNING.touchDamage, '#ff6b6b');
+
+    // knockback away from the blob + red flash + invulnerability flicker
+    const dir = Math.sign(this.cat.x - enemy.x) || 1;
+    this.cat.setVelocity(dir * TUNING.hurtKnockbackX, TUNING.hurtKnockbackY);
+    this.cat.setTintFill(0xff6b6b);
+    this.time.delayedCall(90, () => this.cat.clearTint());
+    this.tweens.add({
+      targets: this.cat,
+      alpha: 0.25,
+      duration: 90,
+      yoyo: true,
+      repeat: Math.floor(TUNING.hurtInvulnMs / 180),
+      onComplete: () => this.cat.setAlpha(1),
+    });
+    this.cameras.main.shake(120, 0.004);
+
+    this.updateHud();
+    if (active.hp <= 0) this.autoSwap();
+  }
+
+  // Next living cat after `from` (cycling), or null if nobody else can fight
+  nextLivingCat(from) {
+    for (let step = 1; step <= this.roster.length; step++) {
+      const i = (from + step) % this.roster.length;
+      if (i !== this.activeIndex && this.roster[i].hp > 0) return i;
+    }
+    return null;
+  }
+
+  swapTo(i) {
+    this.activeIndex = i;
+    this.cat.setTexture(this.roster[i].texture);
+    this.squash(1.25, 0.75);
+    this.add.particles(this.cat.x, this.cat.y, 'puff', {
+      speed: { min: 30, max: 90 },
+      scale: { start: 0.5, end: 0 },
+      lifespan: 300,
+      tint: 0xcfc4ff,
+      emitting: false,
+    }).explode(8);
+    this.updateHud();
+  }
+
+  autoSwap() {
+    const next = this.nextLivingCat(this.activeIndex);
+    if (next === null) {
+      this.doGameOver();
+    } else {
+      this.swapTo(next);
+    }
+  }
+
+  doGameOver() {
+    this.gameOver = true;
+    this.physics.pause();
+    this.trail.emitting = false;
+    this.add
+      .rectangle(480, 270, 960, 540, 0x120c22, 0.7)
+      .setScrollFactor(0)
+      .setDepth(30);
+    this.add
+      .text(480, 240, 'ALL CATS DOWN', {
+        fontFamily: 'Trebuchet MS', fontSize: '44px', fontStyle: 'bold',
+        color: '#ff6b6b', stroke: '#2b1d3a', strokeThickness: 6,
+      })
+      .setOrigin(0.5).setScrollFactor(0).setDepth(31);
+    this.add
+      .text(480, 290, 'Press R to restart', {
+        fontFamily: 'Trebuchet MS', fontSize: '20px', color: '#ffe9c9',
+      })
+      .setOrigin(0.5).setScrollFactor(0).setDepth(31);
+  }
+
+  // --- HUD: one row per roster cat, active row highlighted ---
+  createHud() {
+    this.hudBars = this.add.graphics().setScrollFactor(0).setDepth(10);
+    this.hudTexts = this.roster.map((c, i) =>
+      this.add
+        .text(16, 40 + i * 24, c.name, {
+          fontFamily: 'Trebuchet MS', fontSize: '14px', fontStyle: 'bold',
+        })
+        .setScrollFactor(0)
+        .setDepth(10)
+    );
+    this.updateHud();
+  }
+
+  updateHud() {
+    const g = this.hudBars;
+    g.clear();
+    this.roster.forEach((c, i) => {
+      const active = i === this.activeIndex;
+      const y = 42 + i * 24;
+
+      this.hudTexts[i].setColor(active ? '#ffe9c9' : '#8f86ae');
+      this.hudTexts[i].setAlpha(c.hp > 0 ? 1 : 0.45);
+
+      // bar background + fill (green -> yellow -> red as HP drops)
+      g.fillStyle(0x2b2344, 0.85);
+      g.fillRect(80, y, 90, 12);
+      if (c.hp > 0) {
+        const frac = c.hp / TUNING.catMaxHp;
+        g.fillStyle(frac > 0.6 ? 0x7ddf6a : frac > 0.3 ? 0xf5d442 : 0xff6b6b);
+        g.fillRect(82, y + 2, 86 * frac, 8);
+      }
+      if (active) {
+        g.lineStyle(2, 0xffe9c9, 1);
+        g.strokeRect(79, y - 1, 92, 14);
+      }
+    });
   }
 
   // Quick squash & stretch tween — cheap juice that sells movement
