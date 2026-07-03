@@ -1,8 +1,9 @@
-# Cat Platformer — Phase 4 Prototype
+# Cat Platformer — Phase 5 Prototype
 
-A 2D tag-team action platformer starring cats. This is the Phase 4 build:
-a roster of 3 cat breeds with their own physics profiles — heavy Maine
-Coon, zippy Siamese, floaty Persian — plus independent HP, tag-swapping,
+A 2D tag-team action platformer starring cats. This is the Phase 5 build:
+a roster of 3 cat breeds with their own physics profiles AND signature
+abilities — heavy Maine Coon (Ground Pound), zippy Siamese (Blink Dash),
+floaty Persian (Puff Shield) — plus tag-assist strikes, independent HP,
 claw-swipe combat, patrolling enemy blobs, damage numbers, contact damage
 with knockback, and a game-over screen.
 
@@ -19,7 +20,16 @@ with knockback, and a game-over screen.
 - **SPACE in mid-air** — Flash Jump (air dash in the direction you're facing;
   hold **↑** while pressing SPACE for a vertical flash jump)
 - **Z** — claw swipe (hits enemies in front of you; 3 hits defeats a blob)
-- **X** — tag-swap to the next living cat (Maine Coon → Siamese → Persian)
+- **X** — tag-swap to the next living cat (Maine Coon → Siamese → Persian);
+  the incoming cat performs a free assist swipe as it enters
+- **C** — signature ability (each breed has its own, with a cooldown shown
+  as a pip next to its HP bar):
+  - *Maine Coon — Ground Pound*: press in mid-air to slam down; the landing
+    shockwave damages every blob nearby
+  - *Siamese — Blink Dash*: short teleport in the facing direction, passes
+    through enemies, briefly invulnerable
+  - *Persian — Puff Shield*: a floof bubble that absorbs the next contact
+    hit within a few seconds
 - **R** — restart after a game over
 
 ## Tuning the game feel
@@ -47,30 +57,31 @@ is all in those profile numbers.
   (bar length reflects each breed's max HP)
 - Contact damage with invulnerability flicker, knockback, and camera shake
 - Auto-swap to the next living cat on KO; game over + restart when all fall
+- Signature abilities with per-breed cooldowns and HUD cooldown pips
+- Tag-assist: swapping in a cat triggers a free swipe on entry
 
 ## Roadmap
 
 - [x] Phase 1 — Movement core
 - [x] Phase 2 — Enemies + basic attack + damage numbers
 - [x] Phase 3 — 3-cat tag-swap with independent HP + auto-swap on KO
-- [x] Phase 4 — Breed physics profiles (Maine Coon, Siamese, Persian) (this build)
-- [ ] Phase 5 — Signature abilities + tag-assists
+- [x] Phase 4 — Breed physics profiles (Maine Coon, Siamese, Persian)
+- [x] Phase 5 — Signature abilities + tag-assists (this build)
 - [ ] Phase 6 — Juggles, dialogue cutscenes, a real campaign stage
 - [ ] Phase 7 — Offline gacha + Cat Nap commissions
 
-## Next Claude Code prompt (Phase 5)
+## Next Claude Code prompt (Phase 6)
 
 Open Claude Code in this folder and paste:
 
 > Read game.js and README.md. This is a Phaser 3 cat platformer, currently
-> Phase 4 (3-breed tag team with physics profiles). Build Phase 5:
-> signature abilities + tag-assists. Give each breed a signature ability
-> on the C key with its own cooldown — Maine Coon: ground pound (slam down
-> from mid-air; a shockwave damages nearby grounded enemies), Siamese:
-> blink dash (short teleport in the facing direction that passes through
-> enemies, with brief invulnerability), Persian: puff shield (a bubble
-> that absorbs the next contact hit within a few seconds). Add
-> tag-assists: when you tag-swap with X, the incoming cat performs a free
-> swipe as it enters. Show the ability cooldown next to each HUD row.
-> Add all new values to TUNING/BREEDS. No build tools; keep plain
-> script files.
+> Phase 5 (3-breed tag team with signature abilities). Build Phase 6:
+> juggles, dialogue cutscenes, and a real campaign stage. Add juggle
+> combos: enemies launched by attacks can be hit again in mid-air for
+> bonus damage, with a combo counter that fades if you stop. Add a simple
+> dialogue system: speaker name + portrait swatch + typewriter text in a
+> box at the bottom, advanced with SPACE, triggered at stage start and
+> stage clear. Turn the world into a campaign stage: a wider level with
+> more platforms, more blobs placed deliberately, and a boss blob at the
+> end with a big HP bar; defeating it clears the stage. Keep TUNING/BREEDS
+> patterns. No build tools; keep plain script files.

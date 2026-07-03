@@ -1,9 +1,9 @@
 // ============================================================
-//  CAT PLATFORMER — PHASE 4 PROTOTYPE
+//  CAT PLATFORMER — PHASE 5 PROTOTYPE
 //  A tag team of 3 cat breeds, each with its own physics
-//  profile: heavy Maine Coon, zippy Siamese, floaty Persian.
-//  Plus claw swipe combat, patrolling enemy blobs, damage
-//  numbers, contact damage, and a game-over screen.
+//  profile AND signature ability: heavy Maine Coon (Ground
+//  Pound), zippy Siamese (Blink Dash), floaty Persian (Puff
+//  Shield). Tag-swapping in a cat triggers a free assist swipe.
 //
 //  CONTROLS
 //    ← →        run
@@ -11,7 +11,8 @@
 //    SPACE in mid-air = FLASH JUMP (air dash in the direction
 //    you're facing; hold ↑ for a vertical flash jump instead)
 //    Z          claw swipe (hits enemies in front of you)
-//    X          tag-swap to the next living cat
+//    X          tag-swap to the next living cat (assist swipe!)
+//    C          signature ability (per breed, on cooldown)
 //    R          restart after a game over
 //
 //  GAME-FEEL FEATURES ALREADY TUNED IN:
@@ -71,6 +72,14 @@ const BREEDS = [
       flashJumpUpY: -390,
       attackDamage: 2,    // two swipes fell a blob
     },
+    ability: {
+      type: 'pound',
+      name: 'Ground Pound', // mid-air only: slam down, shockwave on landing
+      cooldownMs: 4000,
+      slamSpeed: 950,       // downward slam velocity
+      radius: 130,          // shockwave reach around the landing point
+      damage: 2,            // shockwave damage to each blob caught in it
+    },
   },
   {
     name: 'Siamese', // the speedster: fastest run and flash jump, light hits
@@ -89,6 +98,13 @@ const BREEDS = [
       flashJumpUpY: -470,
       attackDamage: 1,
     },
+    ability: {
+      type: 'blink',
+      name: 'Blink Dash',   // short teleport through enemies
+      cooldownMs: 2200,
+      distance: 150,        // teleport distance in the facing direction
+      invulnMs: 300,        // brief invulnerability after the blink
+    },
   },
   {
     name: 'Persian', // the cloud: floaty low gravity, slow, highest HP
@@ -106,6 +122,12 @@ const BREEDS = [
       flashJumpLift: -220,
       flashJumpUpY: -380,
       attackDamage: 1,
+    },
+    ability: {
+      type: 'shield',
+      name: 'Puff Shield',  // a floof bubble absorbs the next contact hit
+      cooldownMs: 6000,
+      durationMs: 4000,     // shield pops on its own if unused this long
     },
   },
 ];
@@ -295,12 +317,16 @@ class PlayScene extends Phaser.Scene {
     this.keySpace = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
     this.keyZ = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.Z);
     this.keyX = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.X);
+    this.keyC = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.C);
     this.keyR = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R);
     this.nextAttackTime = 0;
     this.nextSwapTime = 0;
     this.invulnUntil = 0;
     this.controlLockUntil = 0;
     this.gameOver = false;
+    this.pounding = false;   // Maine Coon mid-slam
+    this.shieldUntil = 0;    // Persian shield expiry time
+    this.shieldFx = null;
 
     // --- Game-feel state ---
     this.lastGroundedTime = 0;   // for coyote time
@@ -324,7 +350,7 @@ class PlayScene extends Phaser.Scene {
     // --- On-screen instructions ---
     this.add
       .text(16, 14,
-        'ARROWS run  |  SPACE jump / FLASH JUMP  |  Z swipe  |  X swap cat',
+        'ARROWS run  |  SPACE jump / flash  |  Z swipe  |  X swap  |  C ability',
         { fontFamily: 'Trebuchet MS', fontSize: '15px', color: '#ffe9c9' })
       .setScrollFactor(0)
       .setDepth(10);
@@ -352,10 +378,16 @@ class PlayScene extends Phaser.Scene {
       this.trail.emitting = false;
     }
 
+    // --- Ground Pound lands: shockwave! ---
+    if (this.pounding && onGround) {
+      this.pounding = false;
+      this.resolvePound();
+    }
+
     // --- Horizontal movement ---
     const accel = onGround ? TUNING.runAccel : TUNING.airAccel;
-    if (time < this.controlLockUntil) {
-      cat.setAccelerationX(0); // hurt knockback owns the cat for a beat
+    if (time < this.controlLockUntil || this.pounding) {
+      cat.setAccelerationX(0); // knockback (or a slam) owns the cat for a beat
     } else if (this.cursors.left.isDown) {
       cat.setAccelerationX(-accel);
       this.facing = -1;
@@ -393,8 +425,8 @@ class PlayScene extends Phaser.Scene {
       this.isJumpHeld = true;
       this.squash(1.15, 0.85); // little stretch on takeoff
     }
-    // FLASH JUMP (jump pressed again while airborne)
-    else if (jumpPressed && !onGround && !withinCoyote && this.hasFlashJump) {
+    // FLASH JUMP (jump pressed again while airborne, but not mid-slam)
+    else if (jumpPressed && !onGround && !withinCoyote && this.hasFlashJump && !this.pounding) {
       this.hasFlashJump = false;
       if (this.cursors.up.isDown && !Phaser.Input.Keyboard.JustDown(this.cursors.up)) {
         // Vertical flash jump: was already holding UP, pressed SPACE
@@ -430,16 +462,28 @@ class PlayScene extends Phaser.Scene {
       this.swipeAttack();
     }
 
-    // --- Tag swap ---
+    // --- Tag swap (with an assist swipe from the incoming cat) ---
     if (Phaser.Input.Keyboard.JustDown(this.keyX) && time >= this.nextSwapTime) {
       const next = this.nextLivingCat(this.activeIndex);
       if (next !== null) {
         this.nextSwapTime = time + TUNING.swapCooldownMs;
-        this.swapTo(next);
+        this.swapTo(next, true);
       }
     }
 
+    // --- Signature ability ---
+    if (Phaser.Input.Keyboard.JustDown(this.keyC)) {
+      this.useAbility(time, onGround);
+    }
+
+    // --- Puff Shield follows the cat and pops when it expires ---
+    if (this.shieldFx) {
+      this.shieldFx.setPosition(cat.x, cat.y);
+      if (time > this.shieldUntil) this.clearShield();
+    }
+
     this.updateEnemies(time);
+    this.updateHud(); // every frame so the cooldown pips animate
   }
 
   // ----------------------------------------------------------
@@ -470,19 +514,18 @@ class PlayScene extends Phaser.Scene {
     for (const enemy of this.enemies.getChildren()) {
       if (!enemy.active) continue;
       if (Phaser.Geom.Rectangle.Overlaps(hitRect, enemy.getBounds())) {
-        this.hitEnemy(enemy);
+        this.hitEnemy(enemy, this.activeProfile().attackDamage, this.facing);
       }
     }
   }
 
-  hitEnemy(enemy) {
-    const damage = this.activeProfile().attackDamage;
+  hitEnemy(enemy, damage, knockDir) {
     const hp = enemy.getData('hp') - damage;
     enemy.setData('hp', hp);
     this.popDamageNumber(enemy.x, enemy.y - 18, damage);
 
-    // knockback away from the cat + brief white flash
-    enemy.setVelocity(this.facing * TUNING.attackKnockbackX, TUNING.attackKnockbackY);
+    // knockback + brief white flash
+    enemy.setVelocity(knockDir * TUNING.attackKnockbackX, TUNING.attackKnockbackY);
     enemy.setData('stunUntil', this.time.now + TUNING.enemyStunMs);
     enemy.setTintFill(0xffffff);
     this.time.delayedCall(80, () => enemy.active && enemy.clearTint());
@@ -569,6 +612,17 @@ class PlayScene extends Phaser.Scene {
     const now = this.time.now;
     if (now < this.invulnUntil) return;
 
+    // Puff Shield absorbs the hit instead
+    if (now < this.shieldUntil) {
+      this.shieldUntil = 0;
+      this.clearShield();
+      this.invulnUntil = now + 500;
+      const blockDir = Math.sign(this.cat.x - enemy.x) || 1;
+      this.cat.setVelocity(blockDir * TUNING.hurtKnockbackX * 0.6, TUNING.hurtKnockbackY * 0.6);
+      this.announce('Blocked!', '#f5c9d4');
+      return;
+    }
+
     const active = this.roster[this.activeIndex];
     active.hp = Math.max(0, active.hp - TUNING.touchDamage);
     this.invulnUntil = now + TUNING.hurtInvulnMs;
@@ -604,11 +658,14 @@ class PlayScene extends Phaser.Scene {
     return null;
   }
 
-  swapTo(i) {
+  swapTo(i, withAssist) {
     this.activeIndex = i;
     this.cat.setTexture(this.roster[i].texture);
     // the incoming breed's physics take over immediately
     this.cat.body.setGravityY(this.activeProfile().gravity - this.physics.world.gravity.y);
+    // any Persian shield belongs to the cat that just left
+    this.clearShield();
+    this.pounding = false;
     this.squash(1.25, 0.75);
     this.add.particles(this.cat.x, this.cat.y, 'puff', {
       speed: { min: 30, max: 90 },
@@ -617,6 +674,8 @@ class PlayScene extends Phaser.Scene {
       tint: 0xcfc4ff,
       emitting: false,
     }).explode(8);
+    // tag-assist: the incoming cat strikes as it enters
+    if (withAssist) this.swipeAttack();
     this.updateHud();
   }
 
@@ -650,6 +709,138 @@ class PlayScene extends Phaser.Scene {
       .setOrigin(0.5).setScrollFactor(0).setDepth(31);
   }
 
+  // ----------------------------------------------------------
+  // Phase 5: signature abilities (C key)
+  // ----------------------------------------------------------
+  useAbility(time, onGround) {
+    const cat = this.roster[this.activeIndex];
+    const A = cat.ability;
+    if (time < (cat.abilityReadyAt || 0)) return;
+
+    let used = false;
+    if (A.type === 'pound') used = this.doGroundPound(A, onGround);
+    else if (A.type === 'blink') used = this.doBlinkDash(A);
+    else if (A.type === 'shield') used = this.doPuffShield(A);
+
+    if (used) {
+      cat.abilityReadyAt = time + A.cooldownMs;
+      this.announce(A.name + '!', '#ffd23e');
+    }
+  }
+
+  // Maine Coon: slam straight down from mid-air; shockwave on landing
+  doGroundPound(A, onGround) {
+    if (onGround) return false; // needs air under those paws
+    this.pounding = true;
+    this.cat.setVelocity(0, A.slamSpeed);
+    this.trail.emitting = true;
+    return true;
+  }
+
+  resolvePound() {
+    const A = this.roster[this.activeIndex].ability;
+    const cx = this.cat.x;
+    const cy = this.cat.body.bottom;
+    this.trail.emitting = false;
+
+    // expanding shockwave ring + dust + a hefty screen shake
+    const ring = this.add.circle(cx, cy, 20, 0xffffff, 0).setStrokeStyle(5, 0xffd23e, 0.9);
+    this.tweens.add({
+      targets: ring,
+      scale: A.radius / 20,
+      alpha: 0,
+      duration: 280,
+      ease: 'Quad.easeOut',
+      onComplete: () => ring.destroy(),
+    });
+    this.add.particles(cx, cy, 'puff', {
+      speed: { min: 60, max: 160 },
+      scale: { start: 0.6, end: 0 },
+      lifespan: 350,
+      tint: 0xd9c9a3,
+      emitting: false,
+    }).explode(14);
+    this.cameras.main.shake(180, 0.008);
+    this.squash(1.45, 0.55);
+
+    for (const enemy of this.enemies.getChildren()) {
+      if (!enemy.active || !enemy.body.enable) continue;
+      if (Phaser.Math.Distance.Between(cx, cy, enemy.x, enemy.y) <= A.radius) {
+        this.hitEnemy(enemy, A.damage, Math.sign(enemy.x - cx) || 1);
+      }
+    }
+  }
+
+  // Siamese: short teleport in the facing direction, through anything
+  doBlinkDash(A) {
+    const fromX = this.cat.x;
+    const fromY = this.cat.y;
+    const toX = Phaser.Math.Clamp(fromX + this.facing * A.distance, 24, WORLD_WIDTH - 24);
+    const vx = this.cat.body.velocity.x;
+    const vy = this.cat.body.velocity.y;
+    this.cat.body.reset(toX, fromY);
+    this.cat.setVelocity(vx, vy);
+    this.invulnUntil = Math.max(this.invulnUntil, this.time.now + A.invulnMs);
+
+    // a streak of afterimages along the blink path
+    for (let i = 0; i <= 6; i++) {
+      const px = Phaser.Math.Linear(fromX, toX, i / 6);
+      const p = this.add.image(px, fromY, 'puff').setTint(0x9fd0ff).setAlpha(0.6).setScale(0.8);
+      this.tweens.add({
+        targets: p,
+        alpha: 0,
+        scale: 0.1,
+        duration: 250,
+        delay: i * 25,
+        onComplete: () => p.destroy(),
+      });
+    }
+    return true;
+  }
+
+  // Persian: a floof bubble that absorbs the next contact hit
+  doPuffShield(A) {
+    this.shieldUntil = this.time.now + A.durationMs;
+    if (this.shieldFx) this.shieldFx.destroy();
+    this.shieldFx = this.add
+      .circle(this.cat.x, this.cat.y, 34, 0xf5c9d4, 0.2)
+      .setStrokeStyle(2, 0xf5c9d4, 0.9);
+    return true;
+  }
+
+  clearShield() {
+    this.shieldUntil = 0;
+    if (!this.shieldFx) return;
+    const fx = this.shieldFx;
+    this.shieldFx = null;
+    this.tweens.add({
+      targets: fx,
+      scale: 1.5,
+      alpha: 0,
+      duration: 180,
+      onComplete: () => fx.destroy(),
+    });
+  }
+
+  // Floating announcement text above the cat (ability names, blocks)
+  announce(message, color) {
+    const t = this.add
+      .text(this.cat.x, this.cat.y - 44, message, {
+        fontFamily: 'Trebuchet MS', fontSize: '16px', fontStyle: 'bold',
+        color, stroke: '#2b1d3a', strokeThickness: 4,
+      })
+      .setOrigin(0.5)
+      .setDepth(20);
+    this.tweens.add({
+      targets: t,
+      y: t.y - 30,
+      alpha: 0,
+      duration: 800,
+      ease: 'Cubic.easeOut',
+      onComplete: () => t.destroy(),
+    });
+  }
+
   // --- HUD: one row per roster cat, active row highlighted ---
   createHud() {
     this.hudBars = this.add.graphics().setScrollFactor(0).setDepth(10);
@@ -666,6 +857,7 @@ class PlayScene extends Phaser.Scene {
 
   updateHud() {
     const g = this.hudBars;
+    const now = this.time.now;
     g.clear();
     this.roster.forEach((c, i) => {
       const active = i === this.activeIndex;
@@ -687,6 +879,24 @@ class PlayScene extends Phaser.Scene {
       if (active) {
         g.lineStyle(2, 0xffe9c9, 1);
         g.strokeRect(109, y - 1, barW + 2, 14);
+      }
+
+      // ability cooldown pip: bright = ready, pie fills as it recharges
+      const pipX = 110 + barW + 14;
+      const pipY = y + 6;
+      const readyAt = c.abilityReadyAt || 0;
+      if (now >= readyAt) {
+        g.fillStyle(0xffd23e, 1);
+        g.fillCircle(pipX, pipY, 6);
+      } else {
+        g.fillStyle(0x2b2344, 0.9);
+        g.fillCircle(pipX, pipY, 6);
+        const frac = 1 - (readyAt - now) / c.ability.cooldownMs;
+        if (frac > 0.02) {
+          g.fillStyle(0x8f86ae, 1);
+          g.slice(pipX, pipY, 6, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2, false);
+          g.fillPath();
+        }
       }
     });
   }
